@@ -1,0 +1,69 @@
+---
+title: "Postman: rider bikes, evaluate, pickup"
+sidebarTitle: "Postman mobile bikes"
+description: "Saved 200 bodies: create bike, TMA-168, evaluate, price-selection"
+---
+
+## Summary
+
+Postman `Timoto_API.postman_collection.json` has **101** requests. This page is the **sell path** bodies Apps actually uses. Auth/OCR/upload: [postman-mobile-auth](/apis/postman-mobile-auth). Marketplace: [postman-mobile-market](/apis/postman-mobile-market). Newer than Postman: [not in Postman](/apis/not-in-postman).
+
+Host `{base}` = `https://api-staging.timoto.ai`. Envelope often includes unused `evaluation_id` / `valuation_price` — FE ignores those on health/options.
+
+## Create bike (`ExpectedPrice`)
+
+`POST /api/v1/bikes/`
+
+```json
+{
+  "device_id": "device_123",
+  "brand": "Honda",
+  "model": "Air Blade",
+  "year": 2020,
+  "mileage": "15,000 km",
+  "condition": "Tốt",
+  "under_warranty": false,
+  "document_type": "Xe chính chủ",
+  "asked_price": 15000000,
+  "is_owner": true,
+  "license_plate": "30A-12345",
+  "engine_number": "ABC123456",
+  "chassis_number": "XYZ789012"
+}
+```
+
+**201** returns `bike_id` (UUID). Non-owner stops here (no evaluate). Owner continues to photos.
+
+DB: `bikes` row. Cavet image is a later `POST /upload/recognition-paper` \+ S3 PUT, not this body.
+
+## Evaluate (`BikeDataAnalysis`)
+
+Apps: `POST /api/v1/bikes/{id}/evaluate/async/` then poll `GET .../evaluate/result/`. Expect `data.output_jsons` length **3**. This is **not** Postman’s `POST /evaluation/full/`.
+
+Then `POST /operator-review-requests/` and wait WS/FCM `valuation_ready` — screen does **not** advance on AI done alone.
+
+## Dual price (`BikeValuationResult`)
+
+`GET /api/v1/evaluation/operator-price/{bike}/?operator_review_request_id=` → mobile HMAC → internal operator-offer **200** (FMP \+ listing \+ TIPP). Parse with `parseSellerDualPrice`.
+
+`POST /api/v1/evaluation/price-selection/{bike}/`
+
+```json
+{ "option": "listing" }
+```
+
+or `instant_purchase`. **200** `selected_price_vnd` matches the chosen snapshot. See [Dual price](/features/dual-price-listing).
+
+Listing FSM (also in Postman folder 09): `POST /evaluation/listing/{bike}/confirm/` creates `SellerListing` \+ `marketplace_status=listed`. Poll `GET .../listing/{bike}/` (`poll_after_seconds: 30`, `buyer_found`).
+
+## Pickup (`SetScheduleToShip`)
+
+`POST /api/v1/bikes/pickup-schedule/` → **201** `schedule_id`. `GET .../list/` · `GET .../{id}/` · `PATCH .../{id}/` `{ "status": "cancelled" }` for TMA-168 — [Pickup reschedule](/features/pickup-reschedule).
+
+Sale history: `GET /bikes/sale-history/?tab=processing|completed`. **Hủy bán** `POST .../sale-history/{id}/cancel/` kills the sale (not the same as PATCH cancel schedule).
+
+## OCR \+ upload (sell images)
+
+`POST /api/v1/ocr/vehicle-registration/` multipart `image` **200** `data.vehicle_info.license_plate/brand/model_code/...` → `OcrConfirmResult` then `RegisterInput`.
+
+`POST /upload/images` `{ bike_id, file_count: 8 }` **200** `presigned_urls[]` → PUT S3 → `POST /bikes/{id}/media/batch/` (not in Postman). Same pattern for `audios` / `videos` count 1.

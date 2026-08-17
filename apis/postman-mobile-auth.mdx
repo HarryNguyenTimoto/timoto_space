@@ -1,0 +1,39 @@
+---
+title: "Postman: rider auth, OCR, upload"
+sidebarTitle: "Postman mobile auth"
+description: "Saved 200 bodies: OTP, OCR, options, S3 presign"
+---
+
+## Summary
+
+Rider auth \+ OCR \+ options \+ S3 presign from Postman. Staging OTP documented in collection as `654321` (dev only — never production).
+
+## OTP (Authen → OTPScreen)
+
+`POST /api/v1/auth/mobile/login/` `{ phone_number }` **200** `{ session, expires_in: 120 }` or **404** unregistered → signup.
+
+`POST /auth/mobile/verify-login-otp/` `{ phone_number, otp_code, session }` **200** `{ access_token, refresh_token, id_token, user_id }`.
+
+Signup: `POST /auth/mobile/signup/` → **201** `{ pending_id, next_step: confirm-signup }` or **200** `{ already_registered: true, session }` · `send-otp` · `verify-otp`.
+
+`POST /auth/mobile/refresh/` `{ refresh_token }` — MainTabs mounts this.
+
+Zalo/Apple native are **not** in this Postman folder — [Zalo](/features/zalo-login), [not in Postman](/apis/not-in-postman).
+
+## OCR (`ScanBikeCer`)
+
+`POST /api/v1/ocr/vehicle-registration/` multipart `image` (or `image_url` / `image_base64`).
+
+**200** `data.owner_info.full_name` · `data.vehicle_info.license_plate, brand, model_code, engine_number, chassis_number, color` → confirm screen then `GET /options/brands|models|years`.
+
+**400** no image · **500** Gemini parse fail. Real camera only for E2E.
+
+## Options (`RegisterInput` / `RegisterInputSecond`)
+
+`GET /options/brands` · `models?brand=` · `years` · `mileage-options` · `document-types` (`Xe chính chủ` / `Xe không chính chủ`) · `warranty-options` · `condition` · `provinces` · `price-range?brand&model&year`.
+
+## Upload (`Register2ndStep`)
+
+`POST /upload/images` `{ bike_id, file_count }` **200** `presigned_urls[].presigned_url` \+ `public_url` \+ `s3_key` `{bike_id}_image_{n}.jpg`. FE PUTs to S3 then **must** `POST /bikes/{id}/media/batch/` (missing from Postman).
+
+Same for `/upload/videos` and `/upload/audios`. Cavet file: `/upload/recognition-paper` `{ bike_id, file_extension }` (Postman has no saved 200 — reconstruct from tests).

@@ -6,7 +6,7 @@ description: "Sell → FMP → HMAC offer → price choice → pickup"
 
 ## Summary
 
-Money path: rider lists a bike → mobile evaluate / TIPP → OPS enters **FMP only** (blind to TIPP on input) → internal snapshots listing \+ TIPP → mobile pulls operator-offer over HMAC → rider picks `listing` or `instant_purchase` → pickup → sale complete. Unit tests cover pieces. No single automated test owns the full cross-repo path yet.
+Money path: rider lists a bike → mobile evaluate → OPS enters **FMP only** → internal snapshots listing \+ TIPP → HMAC operator-offer → seller picks listing vs instant → pickup. Full hop contracts (request JSON, 200 JSON, DB columns, FE bind) are on [Dual price](/features/dual-price-listing) and [Pickup reschedule](/features/pickup-reschedule). Postman 200 dumps: [OPS](/apis/postman-internal), [rider bikes](/apis/postman-mobile-bikes).
 
 ```mermaid
 sequenceDiagram

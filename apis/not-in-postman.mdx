@@ -1,0 +1,64 @@
+---
+title: "APIs newer than Postman"
+sidebarTitle: "Not in Postman"
+description: "APIs in code/FE but missing or stale in Postman"
+---
+
+## Summary
+
+Postman is **necessary but stale**. These routes exist in git (urls.py, Apps `endpoints.ts`, dealer FE, checkout contract) and are **missing or incomplete** in the three collections. Treat this page as the “new APIs” list the prompt asked for.
+
+## Rider — in Django, thin/absent in Postman
+
+| Method path | Why | FE |
+| --- | --- | --- |
+| `POST /bikes/{id}/media/batch/` | After PUT S3, attach image/audio/video positions | `Register2ndStep`, audio/video steps |
+| `POST /bikes/{id}/evaluate/async/` \+ `GET .../evaluate/result/` | Apps evaluate path (gRPC). Postman has `/evaluation/full/` which Apps **does not** use | `BikeDataAnalysis` |
+| `POST /evaluation/listing/{bike}/confirm/` | After `option: listing`, creates `SellerListing`, `marketplace_status=listed` | listing confirm |
+| `POST .../listing/{bike}/switch-to-instant-purchase/` | Waiting-for-buyer → TIPP | `WaitingForBuyer` |
+| `POST .../listing/{bike}/cancel/` | Cancel listing while waiting | listing UI |
+| `GET .../listing/{bike}/` | Poll `buyer_found`, `poll_after_seconds: 30` | `WaitingForBuyer` |
+| `POST /operator-review-requests/` | Ask OPS; WS wait | `BikeDataAnalysis` |
+| `POST /operator-review-requests/cancel/` | **Full** cancel valuation — not TMA-168 |
+| `POST /bikes/assign-owner/` | Guest → authed mid-evaluate | login modal |
+| `POST /auth/zalo/native/` `.../zalo/start/` `.../apple/native/` | Live auth; Postman auth folder is mostly OTP |
+| `POST /auth/register-fcm-token/` | Push | after login |
+| `DELETE /auth/account/delete/` | Personal tab |
+
+## Rider — in Apps, **not** in `bikes/urls.py` (will 404 until mounted)
+
+From `apps/src/api/endpoints.ts` \+ `marketplaceBuyService.ts` (TMA-176):
+
+- `POST /marketplace/purchase-orders/`
+- `GET /marketplace/purchase-orders/`
+- `GET /marketplace/purchase-orders/{id}/`
+- `GET /marketplace/purchase-orders/delivery-availability/`
+- `PATCH /marketplace/purchase-orders/{id}/schedule/`
+- `POST .../cancel/` `.../remaining/pay/` `.../refund-status/`
+- `GET /marketplace/payments/{id}/` (VietQR poll)
+
+Money design: dealer shared checkout \+ paid-hook (`SHARED_CHECKOUT_CONTRACT.md`). Do not document these as production-ready until urls.py mounts them.
+
+## Internal — in `api_urls.py`, weak/missing Postman examples
+
+- `POST /api/submissions/{id}/reject/`
+- `POST /api/vehicles/{id}/sale/complete/` `.../sale/fail/`
+- `GET /api/vehicles/pending-sale/`
+- `POST /api/pickups/{id}/picked-up/` (between inspection and complete)
+- `POST /api/webhooks/tma/new-submission/`
+- Valuation aliases `/api/valuation/queue/` etc. (older OPS clients)
+
+## Dealer — live FE vs collection
+
+Collection is auctions \+ VietQR \+ notifications. Hub v2 actually calls:
+
+- `GET /catalog/bikes/` `GET /catalog/bikes/:comboId/`
+- `GET /bikes/:id/ai-report/` (read-only `BikeEvaluationResult`)
+- `POST /orders/` then `POST /payments/dealer-order/create/` (not CONTRACT `POST /orders/{id}/pay/`)
+- `GET /orders/:id` poll paid
+- Checkout draft: `POST /api/v1/payments/checkouts/` dual-issuer JWT (`SHARED_CHECKOUT_CONTRACT.md`)
+- HMAC `POST` mobile `/internal/inventory/bike-sold/` and `/internal/payments/checkout-paid/`
+
+## How to keep this page honest
+
+After adding a Django route: add a Postman folder **or** a row here in the same PR. Agents must grep `urls.py` vs this table, not assume Postman is complete.
