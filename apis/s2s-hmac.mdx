@@ -1,0 +1,35 @@
+---
+title: "API: server-to-server HMAC"
+sidebarTitle: "S2S HMAC"
+description: "HMAC operator-offer, webhooks, paid-hook, inventory"
+---
+
+## Summary
+
+Cross-repo calls never use rider Cognito. They use **HMAC SHA256** hex in `X-Timoto-Signature: sha256=...`. Secrets live in ECS env (`OPERATOR_OFFER_INTERNAL_HMAC_SECRET`, `TMA_WEBHOOK_SECRET`, checkout HMAC). Empty secret on buyer-found **accepts all** — treat as sev-1 misconfig.
+
+## Calls
+
+| From → to | Method | Path | Canonical string |
+| --- | --- | --- | --- |
+| Mobile BE → Internal | GET | `/api/v1/mobile/operator-offer/?bike_id=&operator_review_request_id=` | `{bike_id}\n{operator_review_request_id}` lowercase UUIDs |
+| Mobile → Internal | POST | `/api/webhooks/tma/new-submission/` | **raw body** |
+| Dealer → Mobile | POST | `/api/v1/internal/payments/checkout-paid/` | see SHARED\_CHECKOUT\_CONTRACT |
+| Dealer/internal → Mobile | POST | `/api/v1/internal/listings/{listing_id}/buyer-found/` | listing\_id lowercase UUID |
+| Mobile → Dealer | POST | `/api/v1/internal/inventory/bike-unavailable/` | S2S key |
+| Dealer → Mobile | bike-sold | inventory\_sync | see dealer inventory\_views |
+
+## Files
+
+- Mobile: `apps/evaluation/internal_operator_offer.py`, `listing_views.py`
+- Internal: `bikes/mobile_operator_offer_views.py`, `bikes/webhooks.py`
+- Dealer: `payments/checkout_service.py`, `orders/inventory_sync.py`
+
+## Invariants
+
+- Mobile **app** must not hold HMAC secrets.
+- Changing the offer JSON requires [Sell → pickup](/flows/sell-to-pickup) \+ tests in **both** repos.
+
+## Tests
+
+P0 this sprint: one HMAC vector shared as fixture. Paid-hook idempotency on mobile.

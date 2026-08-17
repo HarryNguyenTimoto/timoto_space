@@ -1,0 +1,46 @@
+---
+title: "System: timoto-internal-app"
+sidebarTitle: "timoto-internal-app"
+description: "OPS web + RN + JWT Django, FMP/TIPP, dual DB"
+---
+
+## Summary
+
+**timoto-internal-app** is OPS: Vite SPA `frontend_web_version/`, RN `apps/`, Django `backend/`. Hosts: `internal.timoto.ai` (staging) and `prod-internal.timoto.ai`. Auth is **OPS JWT** (`POST /api/auth/login/` phone\+password), not Cognito.
+
+## Frontend ↔ backend
+
+Web: `VITE_API_BASE` \+ `${base}/api${path}`, tokens in `localStorage` (`timoto_internal_access`). 401 → refresh → retry (`frontend_web_version/src/api.ts`). Local Vite proxies `/api` → `:8000`.
+
+OPS app: `apps/src/api/client.ts` same `/api` prefix, AsyncStorage tokens, FCM register `POST /api/auth/register-fcm-token`.
+
+## Dual DB
+
+Router `backend/config/db_router.py`: `default` (staff, PricingEntry), `tma_db` (unmanaged bike mirrors), `user_db_write` (NOTIFY into mobile DB).
+
+## Pricing (code, `tipp_pricing.py`)
+
+OPS types `offer_to_user` (FMP) and `resale_price` (must be ≤ FMP). On **submit**:
+
+```text
+instant_price_vnd = round_half_up(FMP × 0.75)
+listing_price_vnd = round_half_up(FMP × 0.95 × 0.90)
+```
+
+Rates snapshotted at submit. Client preview is OK; server recomputes. `offer_to_user` is never TIPP.
+
+## Inbound / outbound
+
+| Direction | Mechanism |
+| --- | --- |
+| From mobile | `LISTEN operator_channel` \+ `POST /api/webhooks/tma/new-submission/` HMAC-body |
+| To mobile riders | `pg_notify user_channel` \+ optional `POST {TMA_API_URL}/submissions/{id}/offer/` |
+| To mobile backend | `GET /api/v1/mobile/operator-offer/` HMAC-query |
+| To OPS devices | FCM via Firebase Admin |
+
+OpenAPI live: `GET /api/schema/` (JWT), Swagger `GET /api/docs/`.
+
+## Do not
+
+- Do not let OPS submit listing/TIPP as source of truth.
+- Do not use unmounted `backend/bikes/urls.py` — real mount is `config/urls.py` → `bikes/api_urls.py`.

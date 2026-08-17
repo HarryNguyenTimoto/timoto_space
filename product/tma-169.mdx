@@ -1,0 +1,21 @@
+---
+title: "TMA-169 — Buy tab catalog"
+sidebarTitle: "TMA-169"
+description: "TMA-169 Mua xe catalog"
+---
+
+## Summary
+
+TMA-169: **Mua xe** tab catalog. Public list\+filters. `fuel_type=gas|electric` is required on list.
+
+## HTTP
+
+`GET /api/v1/marketplace/listings/` query: brand, bike\_type, displacement buckets, power buckets (EV), location, price, odo, year, sort, page. Guide: `docs/api/MARKETPLACE_CATALOG_API.md`.
+
+## Buy money path
+
+Checkout is **dealer** VietQR \+ paid-hook, not a mobile-only payment service. App purchase-order URLs are **not in urls.py** yet.
+
+## Do not
+
+- Do not ship a buy button that hits missing `/marketplace/purchase-orders/` and call it done.

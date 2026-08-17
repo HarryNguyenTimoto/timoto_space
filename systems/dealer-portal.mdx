@@ -1,0 +1,47 @@
+---
+title: "System: dealer portal (BE + FE)"
+sidebarTitle: "Dealer portal"
+description: "dealer.timoto.ai NLB + Django + v2 SPA + checkout"
+---
+
+## Summary
+
+Dealer Hub is **two repos**. Django \+ infra: `timoto-dealer-portal`. React SPA: `timoto_dealer_portal_v2`. Browser talks to **same host** `https://dealer.timoto.ai/api/v1` (nginx proxies `/api` to Cloud Map Django). Do not invent a third public API host.
+
+## Live traffic
+
+```text
+dealer.timoto.ai
+ → Route53
+ → NLB timoto-dealer-portal-nlb
+ → nginx ECS (timoto-frontend)
+ → Cloud Map backend.timoto-dealer-portal.local:8000
+ → Django timoto-backend :8000
+ → Aurora timoto-dealer-production-new
+```
+
+ALB `timoto-frontend-alb` is **not** the critical path. Staging: `staging.dealer.timoto.ai` \+ staging NLB.
+
+## Frontend contract
+
+Source of truth for FE↔BE: `timoto_dealer_portal_v2/docs/CONTRACT.md`. Axios `frontend/src/api/axiosClient.ts` `baseURL = VITE_API_BASE_URL`.
+
+Known drift: FE pay path is `POST /payments/dealer-order/create/`, not always `POST /orders/{id}/pay/` from older CONTRACT rows. Check both before changing.
+
+## Shared checkout (mobile buy)
+
+`docs/api/SHARED_CHECKOUT_CONTRACT.md`:
+
+- Create/poll QR: `/api/v1/payments/checkouts/`
+- VietQR: `/api/token_generate`, `/bank/api/transaction-sync`
+- Paid → HMAC `POST` mobile `/api/v1/internal/payments/checkout-paid/`
+- Inventory: mobile `bike-unavailable` ↔ dealer `bike-sold`
+
+## AI report on Hub
+
+Dealer Django **reads** `BikeEvaluationResult` written by the mobile AI pipeline. It does not run gRPC evaluate.
+
+## Do not
+
+- Do not run ad-hoc AWS deploy. Use `AWS_PROFILE=harry bash infrastructure/ecs-fargate/deploy-fargate-backend.sh`.
+- Do not touch mobile NLBs (`api.timoto.ai`) from dealer scripts (`CRITICAL_DO_NOT_TOUCH_MOBILE.md`).

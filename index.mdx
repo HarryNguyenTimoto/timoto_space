@@ -10,29 +10,31 @@ Private technical KB for TiMoto. Humans and agents (Cursor, Claude Code, Autonom
 
 This site is **Private**. Specs are not public. If you can read a page without Mintlify login, treat that as an incident.
 
-Wave 1 (this sprint) covers the three journeys Autonoma and CI need first:
+**Start here by role**
 
-- [Zalo login](/features/zalo-login) — iOS native SDK vs Android/WebView, VN Graph IP
-- [Cavet OCR](/features/cavet-ocr) — camera → Gemini → Step01 form. Real device only for E2E
-- [Sell → OPS → pickup](/flows/sell-to-pickup) — FMP in, TIPP/listing out, HMAC offer, pickup
+- Everyone: [Big picture](/architecture/big-picture) — six repos, hosts, money path
+- Infra / CTO: [Data, AI, infra](/architecture/data-ai-infra)
+- PM: [Product tickets](/product/ticket-index)
+- Engineer / agent: [API overview](/apis/overview)
+- Autonoma: [Zalo](/features/zalo-login), [OCR](/features/cavet-ocr), [Sell → pickup](/flows/sell-to-pickup)
 
 ## Repos
 
-| Repo | Role |
-| --- | --- |
-| `timoto-mobile` | Rider app (`Apps/`) \+ Django API |
-| `timoto-internal-app` | OPS web \+ OPS RN \+ Django API |
-| `timoto-dealer-portal` | Dealer backend (checkout paid-hook) |
-| `timoto_dealer_portal_v2` | Dealer frontend |
+| Repo | Role | Page |
+| --- | --- | --- |
+| `timoto-mobile` | Rider app \+ API | [system](/systems/timoto-mobile) |
+| `timoto-internal-app` | OPS web/app \+ API | [system](/systems/timoto-internal-app) |
+| `timoto-dealer-portal` | Dealer Django \+ NLB | [system](/systems/dealer-portal) |
+| `timoto_dealer_portal_v2` | Dealer SPA | same |
+| `TiMoto-AI-Web` | Landing only | [system](/systems/timoto-ai-web) |
+| `chototcaodulieu` | Chotot scrape, isolated | [system](/systems/chototcaodulieu) |
 
 ## How to use this KB
 
-See [How agents use this](/how-agents-use-this).
-
-Cite slugs in Autonoma scenarios and Jira (`mintlify:/features/zalo-login`).
+See [How agents use this](/how-agents-use-this). Cite slugs in Autonoma and Jira (`mintlify:/architecture/big-picture`).
 
 ## Do not
 
 - Do not flip the site Public so an agent can scrape it. Use `/authed/mcp`.
-- Do not dump every markdown file from six repos here. Curate pages with the heading schema on [How agents use this](/how-agents-use-this).
-- Do not call live OpenAI/Gemini from PR CI. Mock clients. Staging evaluate uses `--iterations 1` only.
+- Do not treat Postman env files as source of truth for hosts — use the tables here.
+- Do not call live OpenAI/Gemini from PR CI.

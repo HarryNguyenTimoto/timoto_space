@@ -1,0 +1,31 @@
+---
+title: "TMA-79 — Dual price sell"
+sidebarTitle: "TMA-79"
+description: "TMA-79 dual price listing vs instant"
+---
+
+## Summary
+
+TMA-79: seller sees **two prices** after OPS FMP. **Bán nhanh** = TIPP (`instant_price_vnd` = FMP×0.75), TiMoto owns the bike. **Đăng bán** = listing (`listing_price_vnd` = FMP×0.95×0.90), seller keeps the bike until buyer/deposit.
+
+## Repos
+
+`timoto-mobile` evaluation \+ pickup. `timoto-internal-app` FMP submit \+ HMAC offer.
+
+## HTTP
+
+See [Mobile API](/apis/mobile) dual-price table and [Internal](/apis/internal) submit. Full sequence: [Sell → pickup](/flows/sell-to-pickup).
+
+## Invariants
+
+- OPS types FMP only (`offer_to_user`).
+- Design paths `/sell-submissions/...` were **not** built — use `bike_id` \+ `operator_review_request_id`.
+- Price-selection is not “listed” until `POST .../listing/{id}/confirm/`.
+
+## Tests
+
+Existing TIPP tests on internal. Mobile listing lifecycle tests in evaluation. Autonoma A2 is backlog.
+
+## Do not
+
+- Do not use stale example rates `1.04` / `0.05` from old drafts unless the **row snapshot** stores those rates.
