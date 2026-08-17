@@ -1,0 +1,48 @@
+---
+title: "What to build next (from code)"
+sidebarTitle: "What to build"
+description: "Ordered gaps and Monday start for any role"
+---
+
+## Summary
+
+If you only read one page after the [big picture](/architecture/big-picture), read this. It is the **build list** from code gaps, not a wishlist.
+
+## Ship this sprint (testing plan §8)
+
+1. Fail-hard CI on mobile `backend-ci.yml` and internal `ci.yml`.
+2. Autonoma A1 login exported to git; OCR camera decision written on [Cavet OCR](/features/cavet-ocr).
+3. One P0: paid-hook idempotency **or** HMAC offer; internal login **or** FMP submit.
+
+## Product / FE gaps (do these in order)
+
+| Priority | Gap | Evidence | What “done” looks like |
+| --- | --- | --- | --- |
+| P0 | OPS UI missing Listing \+ TIPP read-only | PricingPage / PricingInput only FMP\+DP | Spec IA-90 / FE\_FMP\_TIPP: two read-only rows, never POST those fields |
+| P0 | Rider gas buy vs missing Django urls | `marketplaceBuyService.ts` vs no `urls.py` | Mount purchase-orders **or** stop calling them |
+| P1 | EV buy button empty | `EVBikeDetail.handleBuy` | Product call then API |
+| P1 | Dual-price screen `ChoosePriceValuationComplete` dead | registered, zero navigations | Delete or wire |
+| P1 | TMA-168 copy: hủy lịch vs hủy bán | PRD vs history cancel | Distinct CTAs \+ tests |
+| P2 | Web OPS has no pickups/notifications | App.tsx route table | Use RN or add routes |
+| P2 | Landing waitlist Lambda unwired | TiMoto-AI-Web | Connect or delete |
+| P2 | Chotot not in Aurora | isolated DynamoDB | Keep isolated until ETL spec |
+
+## Image / camera (QA and Autonoma)
+
+- Cavet: 1280×960 camera, on-device OCR, optional Gemini, then recognition-paper presign.
+- Bike: 8 photos 1600×1200, quality gate, presign PUT, batch media positions 1–8.
+- Audio \+ video: one each, batch media, then async evaluate.
+- **No gallery** in sell. **No simulator OCR.**
+
+## Backend / AI
+
+- Production evaluate = gRPC `EvaluateByBikeId`, not `/evaluation/full/`.
+- `output_jsons` length 3. Live AI not in PR CI.
+- Buyer-found HMAC returns True if secret empty — fix as sev-1 if env blank.
+
+## How a new engineer starts Monday
+
+1. Read [Big picture](/architecture/big-picture) (10 min).
+2. Run the app whose repo you own; walk the tables on [Rider sell](/flows/rider-sell-images) or [OPS](/flows/ops-web-and-app) or [Dealer](/flows/dealer-hub).
+3. Hit the API page for that host. Staging only.
+4. Before changing a payload that crosses repos, open [HMAC](/apis/s2s-hmac) and [Sell → pickup](/flows/sell-to-pickup).

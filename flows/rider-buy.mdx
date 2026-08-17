@@ -1,0 +1,46 @@
+---
+title: "Rider app: buy tab and account"
+sidebarTitle: "Rider buy"
+description: "Mua xe catalog, gas deposit WIP vs Django, EV buy empty"
+---
+
+## Summary
+
+Mua xe tab is `BuyBike.tsx` with segments **Xe xăng** / **Xe điện**. Catalog is live (TMA-169/109). Gas deposit/checkout UI is implemented in the app (TMA-176). Electric **Buy** button is empty. Backend `urls.py` still lacks `/marketplace/purchase-orders/` — treat gas buy as **client-ahead-of-server** until Django routes exist.
+
+## List
+
+`BuyBike`: `GET /marketplace/filters/?fuel_type=` \+ `GET /marketplace/listings/?fuel_type=` (brand, sort, price, year, odo, power). Header → `BuyOrderList`. Card → `GasBikeDetail` or `EVBikeDetail`.
+
+Required query: `fuel_type=gas|electric`.
+
+## Gas detail (TMA-109)
+
+`GasBikeDetail`: `GET /marketplace/listings/{id}/` \+ media \+ condition \+ related. `fetchPurchaseOrders()` to see if user already has an order. Support `POST /marketplace/contact-requests/`.
+
+CTA: Đặt cọc ngay → `BuyGasBikeDeposit`; Xem đơn hàng → `BuyOrderDetail`; Đã bán disabled.
+
+`SlidePhotoDetail` modal: `{ photoUrls, initialIndex }` transparent.
+
+## Gas deposit (TMA-176)
+
+`BuyGasBikeDeposit`:
+
+- `GET /marketplace/purchase-orders/delivery-availability/`
+- `POST /marketplace/purchase-orders/` then poll VietQR `GET /marketplace/payments/{id}/`, regenerate, remaining pay
+- Reschedule: `PATCH /marketplace/purchase-orders/{id}/schedule/`
+
+Money settlement is designed to hit **dealer checkout / VietQR / paid-hook**, not a rider-only payment DB. If staging 404s, that is missing Django urls — `marketplaceBuyService.ts` is not wrong by itself.
+
+## Electric
+
+`EVBikeDetail.handleBuy` is empty: “Luồng mua xe sẽ nối sau”. `postMarketplaceBuyIntent` in `marketplaceService.ts` is **never called**. Legacy `ElectricBike` / `ChatBotAgent` stacks exist as secondary.
+
+## Personal tab
+
+Guest: Đăng nhập → Authen. Logged in: Zalo OA contact, logout, delete account (`DELETE /auth/account/delete/` → OnboardingScreen2). Feedback `GET /feedback/` if not submitted.
+
+## Do not
+
+- Do not document purchase-orders as production-ready until `timoto-mobile` `urls.py` mounts them.
+- Do not wire EV buy to buy-intents without a product pass.
