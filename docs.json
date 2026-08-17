@@ -47,7 +47,9 @@
         "group": "Features",
         "pages": [
           "features/zalo-login",
-          "features/cavet-ocr"
+          "features/cavet-ocr",
+          "features/dual-price-listing",
+          "features/pickup-reschedule"
         ]
       },
       {
@@ -88,7 +90,13 @@
           "apis/mobile",
           "apis/internal",
           "apis/dealer",
-          "apis/s2s-hmac"
+          "apis/s2s-hmac",
+          "apis/not-in-postman",
+          "apis/postman-mobile-auth",
+          "apis/postman-mobile-bikes",
+          "apis/postman-mobile-market",
+          "apis/postman-dealer",
+          "apis/postman-internal"
         ]
       },
       {

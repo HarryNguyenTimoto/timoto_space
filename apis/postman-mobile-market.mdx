@@ -1,0 +1,30 @@
+---
+title: "Postman: marketplace + TMA-79 listing"
+sidebarTitle: "Postman mobile market"
+description: "Saved 200 bodies: catalog, detail, listing confirm"
+---
+
+## Summary
+
+TMA-169 catalog \+ TMA-109 detail \+ TMA-79 listing actions from Postman. `BuyBike` **requires** `fuel_type=gas|electric`. Purchase-orders (TMA-176) are **not** in this collection — [not in Postman](/apis/not-in-postman).
+
+## Catalog
+
+`GET /api/v1/marketplace/filters/?fuel_type=` and `GET /api/v1/marketplace/listings/?fuel_type=` — **400** if `fuel_type` missing (Postman has a dedicated 400 example).
+
+## Detail (GasBikeDetail / EVBikeDetail)
+
+`GET /marketplace/listings/{id}/` \+ `/media/` \+ `/condition-analysis/` \+ `/related/` \+ `/variants/` (EV; gas variants **404** in Postman). Share: `/share-link/`. Contact: `POST /marketplace/contact-requests/`.
+
+`POST /marketplace/buy-intents/` exists in Postman; Apps EV `handleBuy` is **empty** and `postMarketplaceBuyIntent` is unused.
+
+## TMA-79 listing (Postman folder 09)
+
+After `POST price-selection { option: listing }`:
+
+- `POST /evaluation/listing/{bike}/confirm/` → `SellerListing`, `marketplace_status=listed`
+- `GET /evaluation/listing/{bike}/` poll `buyer_found`
+- `POST .../switch-to-instant-purchase/` from WaitingForBuyer
+- `POST .../cancel/` while waiting
+
+Bodies and 200s are in the collection; FE bind is [Dual price](/features/dual-price-listing).

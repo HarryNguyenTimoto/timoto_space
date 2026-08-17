@@ -1,0 +1,17 @@
+---
+title: "Postman: dealer portal API"
+sidebarTitle: "Postman dealer"
+description: "Saved 200 bodies: auth, auctions, VietQR"
+---
+
+## Summary
+
+Collection `TiMoto_Dealer_Portal_API.postman_collection.json` (41 requests): health, Cognito/OTP/Zalo auth, auctions, notifications, VietQR. Hub SPA v2 **also** calls catalog \+ `POST /payments/dealer-order/create/` which are newer — [not in Postman](/apis/not-in-postman) and [Dealer Hub flow](/flows/dealer-hub).
+
+`GET /health/` **200** `{ "status": "ok", "message": "Backend is healthy" }`.
+
+Auth: `POST /auth/check-user/` → login or signup OTP → `GET /auth/me/` with Bearer. Zalo browser `{api}/auth/zalo/login/` → callback hash tokens.
+
+VietQR folder is the legacy dealer-pay path. Live Hub create-QR is `POST /payments/dealer-order/create/` then poll `GET /orders/:id` until paid. Shared checkout draft: `SHARED_CHECKOUT_CONTRACT.md` (`payment_purpose` deposit|remaining|full, dual-issuer JWT, paid-hook HMAC into mobile).
+
+Do not document CONTRACT `POST /orders/{id}/pay/` as the live FE path.

@@ -1,0 +1,161 @@
+---
+title: "Postman: OPS internal API"
+sidebarTitle: "Postman OPS"
+description: "Saved 200 bodies: login, FMP submit, pickups, operator-offer"
+---
+
+## Summary
+
+Saved Postman examples for the OPS APIs that the apps actually call. Tokens are `REDACTED`. Host `{base}` = `https://internal.timoto.ai`. Hop-level reasoning (DB \+ FE bind): [Dual price](/features/dual-price-listing). Remaining admin/staff/notification variants live in `docs/postman/TiMoto-Internal-API.postman_collection.json` (44 requests total).
+
+## Auth
+
+`POST /api/auth/login/` body `{ "phone", "password" }`.
+
+**200**
+
+```json
+{
+  "access_token": "REDACTED",
+  "refresh_token": "REDACTED",
+  "expires_in": 28800,
+  "token_type": "Bearer",
+  "user": {
+    "id": "5f08c4c9-1234-4567-abcd-ef1234567890",
+    "phone": "+84901234567",
+    "name": "Nguyễn Văn A",
+    "role": "OPS"
+  }
+}
+```
+
+**401** `{ "error": "Số điện thoại hoặc mật khẩu không đúng." }` · **429** rate limit.
+
+Then: `POST /api/auth/refresh/` → `{ access_token, expires_in, token_type }` · `GET /api/auth/me/` → `{ user }` · `POST /api/auth/register-fcm-token/` `{ token, platform: ios|android }` → `{ detail: ok }` · `POST /api/auth/logout/` `{ refresh_token }` → `{ detail: ok }`.
+
+OPS web LoginPage and RN Onboarding use this. Store Bearer for all `/api/*` except health.
+
+## Submissions queue (OPS Home / Định giá list)
+
+`GET /api/submissions/?tab=all|new|reviewing|done&q=&page=1`
+
+**200** keys FE reads: `bikes[]` (`bike_id`, `masked_bike_id`, `brand`, `model`, `year`, `asked_price`, `has_pricing`, `has_ai_report`, `safe_user.name/phone`), counts `new_count` / `reviewing_count` / `done_count`.
+
+`GET /api/submissions/{bike_id}/?tab=overview|media|ai` **200** keys: `bike.*` (license\_plate, engine\_number, chassis\_number, mileage, asked\_price\_raw), `images[].url` (raw S3 — no CDN rewrite), `videos`, `audios`, `pricing` (null until draft), `ai_locked`, `sla_seconds`, `status_key`.
+
+DB read: mirrored bike row from TMA webhook \+ local `pricing_entries`.
+
+## Pricing (the FMP hop)
+
+`GET /api/submissions/{bike_id}/pricing/` **200** includes `rates` for local Listing/TIPP preview:
+
+```json
+{
+  "pricing": null,
+  "has_ai_report": true,
+  "rates": {
+    "tipp_discount_rate": "0.75",
+    "market_multiplier_rate": "0.95",
+    "timoto_fee_rate": "0.90"
+  }
+}
+```
+
+If already SUBMITTED: `{ "redirect": "success" }`.
+
+`POST /api/submissions/{bike_id}/pricing/`
+
+```json
+{
+  "resale_price": "30000000",
+  "offer_to_user": "25000000"
+}
+```
+
+**200 DRAFT** — `pricing.offer_to_user` is FMP, `margin` = resale − FMP, **no listing/TIPP yet**. **422** if FMP \> resale or FMP not a positive integer.
+
+DB write: `pricing_entries` DRAFT.
+
+`GET .../ai-report/` first call sets `ai_viewed_at` (required before submit if `has_ai_report`). **403** if no draft yet.
+
+`POST .../ai-review-choice/` `{ "skip_ai_review": true }` sets `ai_review_waived`.
+
+`POST .../submit/` body `{}`.
+
+**200**
+
+```json
+{
+  "bike_id": "…",
+  "masked_bike_id": "AB1234",
+  "offer_price": 25000000,
+  "sla_elapsed_seconds": 187,
+  "sla_met": true,
+  "tma_offer_push_ok": true
+}
+```
+
+`offer_price` is **FMP**, not TIPP. Server snapshots `listing_price_vnd` / `instant_price_vnd` \+ rates. `pg_notify` → seller `valuation_ready`.
+
+`GET .../success/` **200** `pricing` after submit (Postman example):
+
+```json
+{
+  "status": "SUBMITTED",
+  "resale_price": "15000000",
+  "offer_to_user": "12000000",
+  "listing_price_vnd": "21375000",
+  "market_multiplier_rate": "0.95",
+  "timoto_fee_rate": "0.90",
+  "instant_price_vnd": "18750000",
+  "instant_purchase_discount_rate": "0.75",
+  "submitted_at": "2026-04-10T10:04:07+07:00"
+}
+```
+
+SPEC GAP: OPS UI still does not render listing/TIPP rows even though success/operator-offer return them.
+
+## HMAC operator-offer (mobile backend only)
+
+`GET /api/v1/mobile/operator-offer/?bike_id=&operator_review_request_id=` header `X-Timoto-Signature: sha256=`.
+
+**200**
+
+```json
+{
+  "ok": true,
+  "success": true,
+  "offer_to_user": 25000000,
+  "fair_market_price_vnd": 25000000,
+  "listing_price_vnd": 21375000,
+  "market_multiplier_rate": "0.95",
+  "timoto_fee_rate": "0.90",
+  "instant_price_vnd": 18750000,
+  "instant_purchase_discount_rate": "0.75",
+  "resale_price": 30000000,
+  "margin": 5000000,
+  "submitted_at": "2026-07-20T10:00:00+00:00"
+}
+```
+
+**401** invalid signature · **404** no SUBMITTED pricing. Seller app binds via `parseSellerDualPrice` — see [Dual price](/features/dual-price-listing).
+
+## Pickups (OPS RN Purchase tab — not on OPS web)
+
+`GET /api/pickups/` **200** `{ success, total, upcoming_today_count, pickups[] }` with `offer_price_vnd`, `scheduled_date`, `time_slot_display`, `ui_status_key=waiting_pickup`.
+
+`GET /api/pickups/{bike_id}/` **200** `{ bike, schedule, pricing.offer_to_user, offer_price_vnd }`.
+
+`PATCH /api/pickups/{bike_id}/` partial date/slot/address · **422** empty body.
+
+`GET|POST|PATCH /api/pickups/{bike_id}/inspection/` `{ actual_odometer, inspection_notes, inspection_checklist }`.
+
+`POST /api/pickups/{bike_id}/complete/` **requires** `actual_odometer` ≥ 0 · **200** `{ status: completed, dp_listed_at }` · **422** missing odometer.
+
+`POST /api/pickups/{bike_id}/reject/` `{ reason }` min 5 chars · **200** `{ status: rejected }`.
+
+FCM `OFFER_ACCEPTED` / `PICKUP_SCHEDULED` → pickup popup; `PICKUP_RESCHEDULED` → WaitingPickupDetail.
+
+## Dashboard
+
+`GET /api/dashboard/` **200** includes `waiting_pickup_count` which must match `GET /api/pickups/` `total`. `GET /health/` (no `/api`) `{ status: ok }` for ALB.

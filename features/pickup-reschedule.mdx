@@ -1,0 +1,63 @@
+---
+title: "Feature: cancel pickup without killing the sale"
+sidebarTitle: "Pickup reschedule"
+description: "TMA-168 spec copy, PATCH cancel vs POST new, 409 rules"
+---
+
+## Summary
+
+Spec: `timoto-mobile/docs/pr/TMA-PICKUP-RESCHEDULE_DESIGN_SPEC.md`. After the seller has locked OPS price and booked handover, **Hủy lịch hẹn** must keep the sale \+ prices and open **Đặt lại lịch**. It must **not** return to `RegisterSellBike` and must **not** call `POST /operator-review-requests/cancel/`.
+
+## Copy (spec, VI)
+
+| UI | Copy |
+| --- | --- |
+| Secondary CTA on confirmation | Hủy lịch hẹn (not Hủy bán xe) |
+| Popup title | Hủy lịch hẹn bàn giao? |
+| Popup body | Bạn có thể đặt lịch mới ngay sau đó. Mức giá đã chốt vẫn được giữ đến khi hết hạn định giá. |
+| Confirm | Huỷ lịch hẹn |
+| Dismiss | Giữ lịch hẹn |
+| Reschedule title | Đặt lại lịch bàn giao |
+
+**Different API:** sale history **Hủy bán** = `POST /bikes/sale-history/{id}/cancel/` (kills the sale). Do not mix these.
+
+## Hop: cancel schedule only
+
+**Caller:** `SetScheduleConfirmation` popup confirm.
+
+`PATCH /api/v1/bikes/pickup-schedule/{schedule_id}/`
+
+```json
+{ "status": "cancelled" }
+```
+
+**200:** `status: cancelled`. Toast on network fail; stay on confirmation. **409** if pickup already `completed`/`rejected`.
+
+**DB:** pickup row cancelled. Valuation \+ `SellerPriceSelection` **unchanged**. Clear local `last_pickup_schedule_id`. Do **not** clear valuation resume checkpoint.
+
+**Next:** `navigation.reset` to `[MainTabs, SetScheduleToShip]` with `replace_schedule_id`, prefilled phone/province/ward, dual prices still in params.
+
+## Hop: create new schedule
+
+`POST /api/v1/bikes/pickup-schedule/` same body as first booking (`bike_id`, address, slot, `valuation_price`, `operator_review_request_id`).
+
+**201:** new `schedule_id`. Internal gets `pg_notify` / `PICKUP_SCHEDULED` / `PICKUP_RESCHEDULED`.
+
+**FE:** success → `SetScheduleConfirmation` with the **new** schedule. Title first-time vs reschedule is the only copy change.
+
+## Vehicle state (spec)
+
+| Moment | Seller badge | IA |
+| --- | --- | --- |
+| After PATCH cancel (TTL valid) | Đã hủy / CTA Tiếp tục bán | — |
+| After POST new | Đang chờ lấy xe | Offer accepted / pending pickup |
+
+## Invariants
+
+- Cancel schedule ≠ cancel operator-review-request.
+- Double-tap PATCH must be idempotent; disable button while in flight.
+- Unsupported province → existing `UnsupportedMarketModal`.
+
+## Tests
+
+Postman folder `Bikes / TMA-168 Pickup Reschedule (guide)`. Django pickup tests are the strongest suite in mobile backend.
