@@ -1,0 +1,240 @@
+---
+title: "Master prompt: six repos → Mintlify"
+sidebarTitle: "Six-repo master prompt"
+description: "Master prompt: read 6 repos, visualize, update Mintlify, upload via MCP"
+---
+
+## Summary
+
+This is the **master prompt** for any agent session whose job is to read all six TiMoto repos, understand the full product, **visualize** it, and **update the private Mintlify KB** (`timoto-ai`). Copy the block below into Cursor / Claude Code as the first message.
+
+Companion pages: [Deep prompt (per-hop contracts)](/how-agents-use-this/deep-prompt) · [How agents use this](/how-agents-use-this) · [Getting started](/index).
+
+**Do not** ask for 10k–20k lines of filler. **Do** require every screen hop and every money-path API to have request \+ 200 JSON \+ DB \+ FE bind.
+
+---
+
+## MASTER PROMPT (copy everything inside the fence)
+
+```text
+You are the TiMoto documentation agent. Your deliverable is an updated **private** Mintlify knowledge base (deployment: `timoto-ai`, site repo: `HarryNguyenTimoto/timoto_space`, live URL after auth: `https://timoto-ai.mintlify.app`).
+
+You must read **all six codebases** before writing or updating any Mintlify page. You must not skip a repo because “it looks small” or “it’s only landing.” You must produce **visual artifacts** (mermaid, tables, optional Cursor canvas) and **upload** changes through Mintlify Admin MCP (branch → save → GitHub PR → merge).
+
+Site stays **Private + Mintlify Auth**. Never flip Public. Never paste secrets (HMAC, OTP prod, AWS keys, Cognito client secrets).
+
+═══════════════════════════════════════════════════════════════
+PHASE 0 — REPOS (READ ALL SIX; NO EXCEPTIONS)
+═══════════════════════════════════════════════════════════════
+
+Local paths (adjust if user’s machine differs):
+
+| # | Directory | Role | You MUST read |
+|---|-----------|------|----------------|
+| 1 | `timoto-mobile` | Rider RN `apps/` + Django `api.timoto.ai` | `apps/src/navigation/AppNavigator.tsx`, `types.ts`, `api/endpoints.ts`, `backend/**/urls.py`, `backend/postman/Timoto_API.postman_collection.json`, `docs/pr/*.md`, `docs/api/*.md` |
+| 2 | `timoto-internal-app` | OPS web `frontend_web_version/`, OPS RN `apps/`, Django `internal.timoto.ai` | `backend/bikes/api_urls.py`, `docs/API_LISTING_FLOW.md`, `docs/FE_FMP_TIPP_DUAL_PRICE.md`, `docs/API_OPERATOR_OFFER_DUAL_PRICE.md`, `docs/postman/TiMoto-Internal-API.postman_collection.json`, `docs/pr/TMA-PICKUP-RESCHEDULE*.md` |
+| 3 | `timoto-dealer-portal` | Dealer Django + NLB backend | `backend/**/urls.py`, `backend/TiMoto_Dealer_Portal_API.postman_collection.json`, `docs/api/SHARED_CHECKOUT_CONTRACT.md`, `docs/deployment/CURRENT_INFRASTRUCTURE.md` |
+| 4 | `timoto_dealer_portal_v2` | Dealer Hub SPA `frontend/` | `frontend/src/App.tsx`, `docs/CONTRACT.md`, catalog/order/payment API usage in `frontend/src/` |
+| 5 | `TiMoto-AI-Web` | Public marketing / waitlist only | Confirm: **not** the evaluate engine; no gRPC evaluate from landing |
+| 6 | `chototcaodulieu` | Chotot scrape → DynamoDB | Confirm: **isolated** from Aurora; no production rider/OPS path unless ETL spec exists |
+
+**Proof of read (put in your PR body):** for each repo, list ≥5 concrete file paths you opened and one sentence “what this repo owns in production.”
+
+If a repo is missing from the workspace, stop and tell the user which path is absent — do not invent architecture.
+
+═══════════════════════════════════════════════════════════════
+PHASE 1 — THREE SOURCE OF TRUTH (EVERY API / FLOW)
+═══════════════════════════════════════════════════════════════
+
+For every endpoint and every user journey, reconcile in this order:
+
+1. **Git product specs** (quote them; they explain *why*):
+   - TMA-79 dual price: `timoto-internal-app/docs/API_LISTING_FLOW.md`, `FE_FMP_TIPP_DUAL_PRICE.md`
+   - HMAC operator-offer: `API_OPERATOR_OFFER_DUAL_PRICE.md`
+   - TMA-168 pickup: `timoto-mobile/docs/pr/TMA-PICKUP-RESCHEDULE_DESIGN_SPEC.md`
+   - Dealer checkout: `timoto-dealer-portal/docs/api/SHARED_CHECKOUT_CONTRACT.md`
+   - Dealer FE contract: `timoto_dealer_portal_v2/docs/CONTRACT.md`
+   - Word/Figma: if missing on disk, write `MISSING — using git only` on the Mintlify page
+
+2. **Postman collections** (copy saved **200/201/400/409** bodies; redact tokens):
+   - `timoto-mobile/backend/postman/Timoto_API.postman_collection.json` (101 requests)
+   - `timoto-internal-app/docs/postman/TiMoto-Internal-API.postman_collection.json` (44)
+   - `timoto-dealer-portal/backend/TiMoto_Dealer_Portal_API.postman_collection.json` (41)
+
+3. **Code of truth** (anything newer than Postman):
+   - Django `urls.py` / `api_urls.py`
+   - RN/SPA `endpoints.ts`, `apiClient`, service modules
+   - Models: e.g. internal `ops_auth.PricingEntry`, mobile `SellerPriceSelection`, `SellerListing`
+   - Maintain a living gap list on Mintlify: `/apis/not-in-postman` (purchase-orders, media/batch, listing confirm, dealer-order/create, etc.)
+
+**Rule:** If Postman, spec, and code disagree → document all three; mark which one production uses (usually code + spec; Postman may lag).
+
+═══════════════════════════════════════════════════════════════
+PHASE 2 — VISUALIZE (MANDATORY BEFORE WRITING PROSE)
+═══════════════════════════════════════════════════════════════
+
+Before editing Mintlify MDX, produce at least **four** visuals (in Mintlify mermaid blocks or a Cursor `.canvas.tsx` for cross-repo money flow):
+
+A. **Six-repo map** — which host, which DB, which traffic entry (NLB vs ALB), which is isolated.
+
+B. **Rider sell journey** — every `Stack.Screen` in `AppNavigator.tsx` in order; camera sizes (1280×960 cavet, 8×1600×1200, audio, video); mark DEAD routes (`SuccessScreen`, `ChoosePriceValuationComplete`).
+
+C. **Money path** — Seller → mobile evaluate → OPS FMP submit → snapshot listing/TIPP → HMAC operator-offer → price-selection → pickup → (optional) dealer checkout / shared Checkout.
+
+D. **OPS surfaces** — web routes (`frontend_web_version/src/App.tsx`) vs RN tabs (pickups exist on RN, not web).
+
+E. **Dealer Hub** — catalog → order → `POST /payments/dealer-order/create/` or shared Checkout per contract.
+
+Use mermaid `sequenceDiagram` and `flowchart TD` inside Mintlify pages. For dense tabular data (full screen registry, full Postman index), use **Markdown tables**, not 10k-line essays.
+
+Optional: Cursor canvas for interactive architecture — only if user wants a side panel artifact; Mintlify remains canonical for agents (`/authed/mcp`).
+
+═══════════════════════════════════════════════════════════════
+PHASE 3 — MINTLIFY INFORMATION ARCHITECTURE
+═══════════════════════════════════════════════════════════════
+
+Deployment: **timoto-ai** (private). Git docs repo: **HarryNguyenTimoto/timoto_space**.
+
+Nav groups (extend, do not replace blindly):
+
+| Group | Purpose | Example slugs |
+|-------|---------|----------------|
+| Start here | Onboarding | `/index`, `/how-agents-use-this`, `/how-agents-use-this/deep-prompt`, `/how-agents-use-this/six-repo-master-prompt` |
+| Architecture | Wiring | `/architecture/big-picture`, `/architecture/data-ai-infra`, `/architecture/what-to-build` |
+| Flows | Screen-by-screen + APIs per journey | `/flows/rider-sell-images`, `/flows/rider-buy`, `/flows/ops-web-and-app`, `/flows/dealer-hub`, `/flows/sell-to-pickup` |
+| Features | One product behavior, hop contracts | `/features/dual-price-listing`, `/features/pickup-reschedule`, `/features/zalo-login`, `/features/cavet-ocr` |
+| APIs | Postman dumps + gaps | `/apis/overview`, `/apis/postman-internal`, `/apis/postman-mobile-*`, `/apis/not-in-postman`, `/apis/s2s-hmac` |
+| Product | Tickets vs code | `/product/tma-79`, `/product/tma-168`, … |
+| Systems | One page per repo | `/systems/timoto-mobile`, … |
+
+**Every feature/flow page MUST use this section order:**
+1. Summary
+2. Repos / files (exact paths)
+3. Visual (mermaid)
+4. Hop blocks (see Phase 4)
+5. Contract (formulas, enums)
+6. Invariants
+7. Tests / Autonoma slugs
+8. Do not
+
+Agents cite slugs: `mintlify:/features/dual-price-listing`.
+
+Reader MCP (after login): `https://timoto-ai.mintlify.app/authed/mcp`.
+
+Editor MCP (you): Mintlify Admin MCP — `checkout` → edit → `save`.
+
+═══════════════════════════════════════════════════════════════
+PHASE 4 — HOP BLOCK (REQUIRED FOR EVERY API CALL IN A FLOW)
+═══════════════════════════════════════════════════════════════
+
+### Hop: <Screen or job> → <METHOD /path>
+
+- **Why** (one sentence from spec or product rule)
+- **Caller:** `<file>:<function or component>`
+- **Auth:** JWT Bearer | OPS JWT | HMAC | AllowAny
+- **Request:** full JSON (or query params)
+- **200/201:** full JSON from Postman example or Django test — **never invent fields**
+- **Other statuses:** 401, 404, 409, 422 — what FE shows (toast, alert copy from spec)
+- **DB write:** `table.column` (e.g. `pricing_entries.offer_to_user`, `bikes.marketplace_status`)
+- **DB read:** who consumes next (HMAC offer, sale-history card, OPS submissions list)
+- **FE bind:** widget label (VI) → JSON key (e.g. Đăng bán → `listing_price_vnd`)
+- **SPEC GAP:** if spec shows a field UI does not render (OPS Listing/TIPP preview)
+- **Next screen** on success / on failure
+
+Locked product facts (do not get wrong):
+- FMP = `offer_to_user` only from OPS; listing = FMP×0.95×0.90; TIPP = FMP×0.75; snapshot on OPS submit.
+- TMA-168: PATCH pickup `status: cancelled` ≠ POST sale-history cancel.
+- Evaluate in Apps = `POST .../evaluate/async/` + poll; **not** `/evaluation/full/`.
+- HMAC operator-offer is server-to-server only.
+
+═══════════════════════════════════════════════════════════════
+PHASE 5 — PER-REPO MINTLIFY CHECKLIST
+═══════════════════════════════════════════════════════════════
+
+After reading each repo, update or create Mintlify content as follows:
+
+**1. timoto-mobile**
+- [ ] Full `AppNavigator` screen registry + tabs on `/flows/rider-sell-images` and `/flows/rider-buy`
+- [ ] Image pipeline: cavet OCR, 8 photos, presign PUT, `media/batch` on `/apis/not-in-postman` if not in Postman
+- [ ] Postman folders: auth/OCR/upload, bikes/evaluate/pickup, marketplace on `/apis/postman-mobile-*`
+- [ ] System page `/systems/timoto-mobile`: hosts `api.timoto.ai`, Cognito, gRPC AI, WS `valuation_ready`
+
+**2. timoto-internal-app**
+- [ ] OPS web routes + RN tabs on `/flows/ops-web-and-app`
+- [ ] FMP pricing hop on `/features/dual-price-listing` + `/apis/postman-internal`
+- [ ] Pickups/notifications FCM routing
+- [ ] System page: dual DB, `pricing_entries`, pg_notify
+
+**3. timoto-dealer-portal (backend)**
+- [ ] NLB path, Cloud Map, checkout, VietQR, HMAC paid-hook on `/systems/dealer-portal` and `/apis/s2s-hmac`
+- [ ] Postman dealer + gap vs `dealer-order/create`
+
+**4. timoto_dealer_portal_v2 (SPA)**
+- [ ] `/flows/dealer-hub`: HomePage shell, catalog, QR, AI report read-only
+- [ ] Align with `docs/CONTRACT.md`; flag drift
+
+**5. TiMoto-AI-Web**
+- [ ] `/systems/timoto-ai-web`: marketing only; waitlist Lambda status; **not** evaluate
+
+**6. chototcaodulieu**
+- [ ] `/systems/chototcaodulieu`: DynamoDB ap-southeast-1, scrape schedule, no Aurora feed
+
+**Cross-cutting**
+- [ ] `/architecture/big-picture` matches all six
+- [ ] `/architecture/what-to-build` ordered from code gaps
+- [ ] `/apis/not-in-postman` updated whenever urls.py ≠ Postman
+
+═══════════════════════════════════════════════════════════════
+PHASE 6 — UPLOAD TO MINTLIFY (YOU MUST EXECUTE, NOT ONLY DRAFT)
+═══════════════════════════════════════════════════════════════
+
+Use **Mintlify Admin MCP** (not “I’ll write markdown locally and stop”):
+
+1. `checkout` `{ subdomain: "timoto-ai", slug: "<short-topic>" }` → note `editorUrl` for user.
+2. `create_node` or `write_page` / `edit_page` for MDX body.
+3. `update_node` for title/sidebarTitle/description (not edit_page frontmatter).
+4. `list_nodes` / `read` / `diff` / `get_session_state` to verify.
+5. `save` `{ title: "...", body: "## Summary\n...", mode: "auto" }` → opens PR on `HarryNguyenTimoto/timoto_space`.
+6. `gh pr merge <n> --repo HarryNguyenTimoto/timoto_space --merge` after user policy (or leave PR open if auto-merge off).
+7. Tell user: wait for Mintlify deploy; verify private pages load when logged in.
+
+**Do not** discard_session until save succeeded or user asks to abandon.
+
+**Do not** commit secrets into `timoto_space`.
+
+If a page exceeds ~30k chars, split by Postman folder or by journey phase — link with “continued on …” — do not truncate JSON examples.
+
+═══════════════════════════════════════════════════════════════
+PHASE 7 — DEFINITION OF DONE
+═══════════════════════════════════════════════════════════════
+
+You are done only when ALL are true:
+
+1. All six repos listed with proof-of-read paths.
+2. At least one updated **feature** page with full hop blocks (request + 200 + DB + FE) for TMA-79 or TMA-168 or sell-to-pickup.
+3. Postman-backed pages updated for any collection folder you touched.
+4. `/apis/not-in-postman` lists every route you found in urls.py missing from Postman.
+5. Mermaid diagrams on big-picture + at least one flow page.
+6. Mintlify PR merged (or open with URL) and slugs listed for the user.
+7. No Public site toggle; no secrets in diff.
+
+**Self-check question:** Can a new engineer open Mintlify only, follow `/flows/rider-sell-images` + `/features/dual-price-listing`, and implement the next ticket without grepping six repos? If no, keep writing hop blocks — not filler paragraphs.
+
+Begin Phase 0 now. Do not ask the user “which repo to start with.” Read all six, then Phase 1–7 in order.
+```
+
+---
+
+## When to use which prompt
+
+| Prompt | Use when |
+| --- | --- |
+| **This master prompt** | Full KB refresh; new agent; CEO/CTO wants the whole picture on Mintlify |
+| [Deep prompt](/how-agents-use-this/deep-prompt) | Adding one feature; strict per-hop JSON contract |
+| [How agents use this](/how-agents-use-this) | Page schema \+ MCP endpoints |
+
+## Do not
+
+- Do not run this prompt without workspace access to all six directories.
+- Do not substitute TiMoto-AI-Web for the AI evaluate service (gRPC is behind mobile backend).
+- Do not upload Postman env files containing secrets into Mintlify.
