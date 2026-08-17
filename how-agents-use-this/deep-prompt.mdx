@@ -1,0 +1,45 @@
+---
+title: "Agent prompt for complete app flows"
+sidebarTitle: "Deep prompt"
+description: "English agent prompt: complete journeys, no filler quota"
+---
+
+## Summary
+
+Use this prompt when you want the KB expanded again. Do **not** ask for 10,000–20,000 lines per topic. That is a novel, not a spec. Agents skip it, humans cannot scan it, Mintlify search dies. Demand **complete coverage with no invented screens**, not padding.
+
+## Prompt (copy)
+
+```text
+You are documenting TiMoto for engineers, PM, CEO/CTO, and AI agents.
+
+Repos (read code, not READMEs first):
+- timoto-mobile (Apps/ rider RN + Django)
+- timoto-internal-app (OPS web + OPS RN + Django)
+- timoto-dealer-portal (dealer Django + NLB)
+- timoto_dealer_portal_v2 (dealer SPA)
+- TiMoto-AI-Web (landing only)
+- chototcaodulieu (Chotot scrape, isolated)
+
+Mintlify site: private deployment timoto-ai. Cite slugs. English. Page schema:
+Summary, Repos, Files, HTTP, Contract, Invariants, Tests, Do not.
+
+For EVERY user journey, produce:
+1. Navigation tree (route name, component file, params).
+2. Screen-by-screen: what the user sees (copy from code), camera/gallery/images,
+   API method+path, success next screen, error states, WIP/dead routes.
+3. Image pipeline: capture size, on-device OCR/quality gate, presign vs multipart,
+   S3, how many assets, which feed evaluate vs cavet.
+4. How that screen talks to backend, DB, AI gRPC, HMAC, pg_notify, dealer checkout.
+5. Cross-app sequence (rider ↔ OPS ↔ dealer) with mermaid.
+6. Gaps: client routes with no urls.py, UI missing spec fields (Listing/TIPP preview).
+
+Ground every sentence in a file path. If Word/Figma is missing, say so and use git.
+Do not dump secrets. Do not make the site Public.
+Do not write filler to hit a line quota. If a flow is 40 screens, document all 40.
+Ship via Mintlify Admin MCP on branch, PR, merge.
+```
+
+## Why not 10k–20k lines each
+
+A 15,000-line page is ~300k tokens. Cursor/Claude cannot hold six of those and still reason. The operating manual is: **one page per journey, every screen, every API, every image, every dead route** — dense tables, not essays.

@@ -39,7 +39,8 @@
         "group": "Architecture",
         "pages": [
           "architecture/big-picture",
-          "architecture/data-ai-infra"
+          "architecture/data-ai-infra",
+          "architecture/what-to-build"
         ]
       },
       {
@@ -73,7 +74,11 @@
       {
         "group": "Flows",
         "pages": [
-          "flows/sell-to-pickup"
+          "flows/sell-to-pickup",
+          "flows/rider-sell-images",
+          "flows/rider-buy",
+          "flows/ops-web-and-app",
+          "flows/dealer-hub"
         ]
       },
       {
@@ -91,7 +96,8 @@
         "pages": [
           "index",
           "quickstart",
-          "how-agents-use-this"
+          "how-agents-use-this",
+          "how-agents-use-this/deep-prompt"
         ]
       }
     ]
