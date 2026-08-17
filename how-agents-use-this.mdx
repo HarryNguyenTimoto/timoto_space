@@ -1,0 +1,40 @@
+---
+title: "How agents use this"
+sidebarTitle: "How agents use this"
+description: "How Cursor, Claude, Autonoma, and Jira must use this private KB"
+---
+
+## Summary
+
+Agents treat this Mintlify as the source of truth for flows. Git is the source of truth for code. Jira stays the ticket system. Autonoma owns UI E2E recordings.
+
+MCP endpoint for Cursor/Claude on the **published** site: `https://timoto-ai.mintlify.app/authed/mcp` (Mintlify Auth). Admin MCP (`mcp.mintlify.com`) edits the dashboard — it is not a substitute for reading specs.
+
+## Page schema (every feature/flow page)
+
+Use these headings in this order:
+
+1. **Summary** — what the user/system does in one paragraph
+2. **Repos** — which checkouts to open
+3. **Files** — exact paths, not globs
+4. **HTTP** — method \+ path \+ auth
+5. **Contract** — JSON shapes that must not drift
+6. **Invariants** — rules that fail a PR if broken
+7. **Tests** — where coverage lives (or "none — ticket this")
+8. **Do not** — common wrong implementations
+
+## Invariants
+
+- Cite a slug (`See /features/zalo-login`) in Autonoma scenario text.
+- If a payload crosses mobile ↔ internal, update **both** repos in one PR series.
+- Dashboard-only Autonoma tests do not count. Export to `Apps/e2e/autonoma/`.
+- Cavet OCR E2E must run on a **real camera**. Skip in CI rather than fake-pass on simulator.
+
+## Tests
+
+Canonical plan: `timoto-mobile/docs/testing/AUTOMATED_TESTING_PLAN.md` §8 (10–14 day sprint).
+
+## Do not
+
+- Do not invent endpoints that are not on a Mintlify page or in `docs/CONTRACT.md` / API markdown.
+- Do not make this site Public to unblock MCP.

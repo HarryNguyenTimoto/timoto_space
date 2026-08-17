@@ -1,0 +1,88 @@
+---
+title: "Sell → OPS → pickup"
+sidebarTitle: "Sell to pickup"
+description: "Sell → FMP → HMAC offer → price choice → pickup"
+---
+
+## Summary
+
+Money path: rider lists a bike → mobile evaluate / TIPP → OPS enters **FMP only** (blind to TIPP on input) → internal snapshots listing \+ TIPP → mobile pulls operator-offer over HMAC → rider picks `listing` or `instant_purchase` → pickup → sale complete. Unit tests cover pieces. No single automated test owns the full cross-repo path yet.
+
+```mermaid
+sequenceDiagram
+    actor Seller
+    actor OPS
+    participant App as TMA Apps
+    participant TMA as timoto-mobile
+    participant INT as timoto-internal-app
+    Seller->>App: Photos + OCR + evaluate
+    TMA->>INT: valuation / operator channel
+    OPS->>INT: Submit FMP (offer_to_user)
+    INT->>INT: listing_price_vnd = FMP × 0.95 × 0.90
+    INT->>INT: instant_price_vnd = FMP × 0.75
+    App->>TMA: GET evaluation/result
+    TMA->>INT: GET /api/v1/mobile/operator-offer/ HMAC
+    INT-->>App: FMP + listing + TIPP
+    alt Bán nhanh
+        App->>TMA: POST price-selection option=instant_purchase
+        App->>TMA: POST /api/v1/bikes/pickup-schedule/
+    else Đăng bán
+        App->>TMA: POST price-selection option=listing
+        App->>TMA: confirm listing / wait buyer / consignment pickup
+    end
+```
+
+## Repos
+
+- `timoto-mobile` — evaluate, price-selection, pickup-schedule, HMAC client
+- `timoto-internal-app` — FMP submit, `tipp_pricing.py`, `GET /api/v1/mobile/operator-offer/`
+
+## Files
+
+- Internal: `backend/bikes/tipp_pricing.py`, `backend/bikes/mobile_operator_offer_views.py`, submissions pricing in `submissions_api.py`
+- Internal docs: `docs/FE_FMP_TIPP_DUAL_PRICE.md`, `docs/API_OPERATOR_OFFER_DUAL_PRICE.md`, `docs/API_LISTING_FLOW.md`
+- Mobile: evaluation price-selection \+ pickup-schedule views; `apps/evaluation/internal_operator_offer.py`
+- Mobile docs: `docs/api/FRONTEND_DUAL_PRICE_FLOW_GUIDE.md`
+
+## HTTP
+
+| Step | Method | Path | Auth |
+| --- | --- | --- | --- |
+| OPS submit FMP | POST | `/api/submissions/:bike_id/pricing/` | OPS JWT |
+| Mobile reads offer | GET | `/api/v1/mobile/operator-offer/?bike_id=&operator_review_request_id=` | HMAC (server-to-server) |
+| Rider result | GET | `/api/v1/evaluation/result/{bike_id}/` | rider Bearer |
+| Choose price | POST | `/api/v1/evaluation/price-selection/{bike_id}/` | rider Bearer |
+| Pickup | POST/PATCH | `/api/v1/bikes/pickup-schedule/` | rider Bearer |
+
+## Contract
+
+Locked formulas (snapshot rates at submit; do not recompute old rows when env changes):
+
+```text
+listing_price_vnd  = FMP × 0.95 × 0.90   # FMP × 0.855
+instant_price_vnd  = FMP × 0.75
+```
+
+`offer_to_user` **is** FMP. Never write TIPP into `offer_to_user` / `valuation_price`.
+
+Operator-offer 200 example (FMP 25\_000\_000): `listing_price_vnd=21375000`, `instant_price_vnd=18750000`.
+
+Price-selection body: `{ "option": "listing" | "instant_purchase" }`.
+
+## Invariants
+
+- OPS UI: only FMP editable. Listing \+ TIPP are server-computed (preview locally OK; persist only on submit).
+- Tampered HMAC → 401. Stale offer rejected.
+- Blind FMP: OPS must not see TIPP as an input field before submit (product rule).
+
+## Tests
+
+- Internal TIPP/FMP Django tests exist — keep green; add inverted-price reject if missing.
+- Mobile operator-offer HMAC \+ paid-hook idempotency are P0 this sprint (one of each repo).
+- Autonoma A1 this sprint; A2 listing \+ A6 OPS FMP are backlog. Playwright W3 (FMP submit) is nice-to-have.
+
+## Do not
+
+- Do not let the client submit `listing_price_vnd` / `instant_price_vnd` as source of truth.
+- Do not use the older example rates (`market_multiplier_rate=1.04`) from stale drafts — locked rates are 0.95 / 0.90 / 0.75 unless a **snapshot** on the row says otherwise.
+- Do not run live evaluate in PR CI.
