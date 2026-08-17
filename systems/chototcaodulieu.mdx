@@ -1,0 +1,16 @@
+---
+title: "System: chototcaodulieu"
+sidebarTitle: "chototcaodulieu"
+description: "Chotot scrape → DynamoDB. Isolated from Aurora"
+---
+
+## Summary
+
+**chototcaodulieu** scrapes Chotot motorcycle ads (`cg=2020`) daily via Lambda `chotot-daily-scrape` (EventBridge 00:00 VN) into DynamoDB `chotot-xe-may` in **ap-southeast-1**. Images go through SQS producer/worker. Dashboard: CloudFront `d1cwchl0xo05n0.cloudfront.net` \+ `chotot-dashboard-api`.
+
+**No documented write** into Aurora, mobile API, internal OPS, or dealer. Isolated market-research pipeline. See `AGENT_HANDOFF.md`.
+
+## Do not
+
+- Do not wire this DynamoDB into FMP without a new explicit product \+ HMAC/ETL design.
+- Do not scrape from a laptop in production — use the Lambda.

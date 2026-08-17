@@ -1,0 +1,20 @@
+---
+title: "Product tickets vs codebase"
+sidebarTitle: "Ticket index"
+description: "Jira/Figma tickets vs what is actually in git"
+---
+
+## Summary
+
+Product tickets mapped to **code \+ git docs**. The `.docx` pack (`IA-73`, `IA-79`, `TMA-79`, `TMA-109`, `TMA-168`, `TMA-169`, `TMA-176`) was **not present** under Downloads when ingested (folders `drive-download-20260817*` missing). If Figma/Word disagrees with urls.py, file a ticket and update this page — do not silently invent routes.
+
+| Ticket | Intent (from git) | Code / docs | Mintlify |
+| --- | --- | --- | --- |
+| TMA-79 | Dual price: Bán nhanh vs Đăng bán | `FRONTEND_DUAL_PRICE_FLOW_GUIDE.md`, evaluation listing APIs | [TMA-79](/product/tma-79) |
+| TMA-109 | Marketplace bike detail | `MARKETPLACE_BIKE_DETAIL_API.md` | [TMA-109](/product/tma-109) |
+| TMA-168 | Cancel pickup without killing sale; reschedule | `docs/pr/TMA-PICKUP-RESCHEDULE_PRD.md` | [TMA-168](/product/tma-168) |
+| TMA-169 | Mua xe catalog tab | `MARKETPLACE_CATALOG_API.md` | [TMA-169](/product/tma-169) |
+| TMA-176 | **Not found in git** | Re-upload Word | — |
+| IA-73 / IA-79 | **Not found in git** | Internal has **IA-90** as FMP input screen in `FE_FMP_TIPP_DUAL_PRICE.md` | [IA pricing](/product/ia-pricing) |
+
+Autonoma scenarios should cite these slugs plus [Zalo](/features/zalo-login) / [OCR](/features/cavet-ocr).

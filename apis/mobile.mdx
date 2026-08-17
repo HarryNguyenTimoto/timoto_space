@@ -1,0 +1,70 @@
+---
+title: "API: timoto-mobile"
+sidebarTitle: "Mobile API"
+description: "Rider /api/v1 routes from Django urls.py"
+---
+
+## Summary
+
+Base: `https://api-staging.timoto.ai/api/v1` (prod `https://api.timoto.ai/api/v1`). Source: `backend/apps/*/urls.py`. Default DRF: Cognito \+ IsAuthenticated unless noted.
+
+## Marketplace (TMA-169 public)
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/marketplace/listings/` | AllowAny; `fuel_type=gas\|electric` required |
+| GET | `/marketplace/listings/{bike_id}/` | AllowAny |
+| GET | `/marketplace/listings/{bike_id}/media/` | AllowAny |
+| GET | `/marketplace/listings/{bike_id}/condition-analysis/` | AllowAny |
+| GET | `/marketplace/listings/{bike_id}/variants/` | AllowAny |
+| GET | `/marketplace/listings/{bike_id}/related/` | AllowAny |
+| POST | `/marketplace/listings/{bike_id}/share-link/` | AllowAny |
+| POST | `/marketplace/contact-requests/` | AllowAny |
+| POST | `/marketplace/buy-intents/` | AllowAny |
+| GET | `/marketplace/filters/` | AllowAny |
+
+## Bikes / evaluate
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| CRUD | `/bikes/` ViewSet | AllowAny \+ device/owner checks |
+| POST | `/bikes/{id}/evaluate/` | AllowAny — **production gRPC path** |
+| POST | `/bikes/{id}/evaluate/async/` | AllowAny |
+| GET | `/bikes/{id}/evaluate/result/` | AllowAny |
+| POST | `/bikes/{id}/media/` and `/media/batch/` | AllowAny |
+
+Contract: `data.output_jsons` length **3**, `error_message` empty. See workspace evaluate rule.
+
+## Dual price / listing (TMA-79)
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/evaluation/result/{bike_id}/` | JWT |
+| GET | `/evaluation/operator-price/{bike_id}/` | JWT |
+| GET/POST | `/evaluation/price-selection/{bike_id}/` | JWT body `{option: listing\|instant_purchase}` |
+| POST | `/evaluation/listing/{bike_id}/confirm/` | JWT |
+| POST | `/evaluation/listing/{bike_id}/switch-to-instant-purchase/` | JWT |
+| POST | `/evaluation/listing/{bike_id}/cancel/` | JWT |
+| GET | `/evaluation/listing/{bike_id}/` | JWT |
+
+## Pickup / sale history (TMA-168)
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| POST | `/bikes/pickup-schedule/` | JWT |
+| GET | `/bikes/pickup-schedule/list/` | JWT |
+| GET/PATCH | `/bikes/pickup-schedule/{id}/` | JWT cancel via `{status: cancelled}` |
+| GET | `/bikes/sale-history/` | JWT |
+| POST | `/bikes/sale-history/{bike_id}/cancel/` | JWT — **full cancel sale**, not reschedule |
+
+## Auth / Zalo / OCR / upload
+
+See [Zalo login](/features/zalo-login) and [Cavet OCR](/features/cavet-ocr). Upload prefix `/upload/` all AllowAny. Options prefix `/options/` public catalogs.
+
+## S2S inbound
+
+`POST /internal/listings/{listing_id}/buyer-found/` HMAC. **If secret env empty, verifier returns True — misconfig is unsigned.**
+
+## Not in urls.py (do not call)
+
+`/marketplace/purchase-orders/*`, `/marketplace/payments/*` — app-only WIP.

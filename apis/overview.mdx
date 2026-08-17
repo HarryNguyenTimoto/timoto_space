@@ -1,0 +1,46 @@
+---
+title: "API overview — replace Postman browsing"
+sidebarTitle: "Overview"
+description: "Hosts, auth, Postman vs this KB"
+---
+
+## Summary
+
+This section replaces **browsing** Postman. Agents and humans should read these pages first. Executable try-it:
+
+| Surface | Try-it today | Staging host |
+| --- | --- | --- |
+| OPS | Django Spectacular `GET /api/docs/` (JWT) | `https://internal.timoto.ai` |
+| Rider | Postman `backend/postman/Timoto_API.postman_collection.json` (101 requests) until OpenAPI is imported | `https://api-staging.timoto.ai` |
+| Dealer | `timoto_dealer_portal_v2/docs/CONTRACT.md` \+ Django | `https://dealer.timoto.ai` |
+
+Postman remains valid for QA exploration. **Do not** commit OTP/HMAC secrets into this KB. Use GitHub Actions `staging-smoke` secrets.
+
+## Auth cheat sheet
+
+| API | Auth |
+| --- | --- |
+| Rider | Cognito JWT `Authorization: Bearer` — many public marketplace/upload/OCR routes are AllowAny |
+| OPS | JWT from `POST /api/auth/login/` `{phone, password}` |
+| Dealer FE | dealer JWT / OTP / Zalo |
+| S2S | `X-Timoto-Signature: sha256=<hex>` — see [HMAC](/apis/s2s-hmac) |
+
+## Prefixes
+
+| Product | Prefix |
+| --- | --- |
+| Rider | `/api/v1/` |
+| OPS | `/api/` (operator-offer is `/api/v1/mobile/operator-offer/`) |
+| Dealer | `/api/v1/` |
+
+## Catalogs
+
+- [Mobile rider API](/apis/mobile)
+- [Internal OPS API](/apis/internal)
+- [Dealer API](/apis/dealer)
+- [HMAC / webhooks](/apis/s2s-hmac)
+
+## Do not
+
+- Do not document client-only purchase-order paths as live until they exist in `timoto-mobile` `urls.py`.
+- Do not run live evaluate or Gemini from a docs Playground against production.

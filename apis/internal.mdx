@@ -1,0 +1,66 @@
+---
+title: "API: timoto-internal-app"
+sidebarTitle: "Internal API"
+description: "OPS /api routes from api_urls.py"
+---
+
+## Summary
+
+Base: `https://internal.timoto.ai/api` (prod `https://prod-internal.timoto.ai/api`). Mount: `backend/config/urls.py` → `bikes/api_urls.py`. Default: OPS JWT. Swagger: `/api/docs/`. Schema JSON: `/api/schema/`.
+
+## Auth / staff
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| POST | `/auth/login/` | Public `{phone, password}` |
+| POST | `/auth/refresh/` | Public `{refresh_token}` |
+| POST | `/auth/logout/` | Public |
+| GET | `/auth/me/` | JWT |
+| POST | `/auth/register-fcm-token/` | JWT |
+| GET/POST | `/admin/staff/` | JWT\+ADMIN |
+| PATCH | `/admin/staff/{user_id}/` | JWT\+ADMIN |
+| POST | `/admin/staff/{user_id}/reset-password/` | JWT\+ADMIN |
+
+## Submissions / pricing (canonical)
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/submissions/` | JWT |
+| GET | `/submissions/{bike_id}/` | JWT |
+| GET/POST/PUT | `/submissions/{bike_id}/pricing/` | JWT FMP \+ resale |
+| POST | `/submissions/{bike_id}/ai-review-choice/` | JWT |
+| GET | `/submissions/{bike_id}/ai-report/` | JWT |
+| POST | `/submissions/{bike_id}/submit/` | JWT — snapshots TIPP |
+| POST | `/submissions/{bike_id}/reject/` | JWT |
+| GET/PATCH | `/submissions/{bike_id}/success/` | JWT |
+
+Legacy aliases under `/valuation/*` and `/dashboard/` hit the same handlers.
+
+## Pickups / sales / vehicles / notifications
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/pickups/` | JWT |
+| GET/PATCH | `/pickups/{bike_id}/` | JWT |
+| GET/POST/PATCH | `/pickups/{bike_id}/inspection/` | JWT |
+| POST | `/pickups/{bike_id}/picked-up/` | JWT |
+| POST | `/pickups/{bike_id}/complete/` | JWT |
+| POST | `/pickups/{bike_id}/reject/` | JWT |
+| GET | `/vehicles/` `/vehicles/pending-sale/` | JWT |
+| GET | `/vehicles/{bike_id}/` `/sale/` | JWT |
+| POST | `/vehicles/{bike_id}/sale/complete/` `fail/` | JWT |
+| GET | `/notifications/` | JWT |
+| POST | `/notifications/read-all/` `{id}/read/` | JWT |
+
+## Public / S2S
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/health/` (root) | Public — checks `default` \+ `tma_db` |
+| GET | `/bikes/{bike_id}/` | Public |
+| POST | `/webhooks/tma/new-submission/` | HMAC-body |
+| GET | `/v1/mobile/operator-offer/` | HMAC-query |
+
+## Contract (submit)
+
+`offer_to_user` = FMP. `resale_price` ≤ FMP. Server sets `listing_price_vnd` and `instant_price_vnd`. See [Sell → pickup](/flows/sell-to-pickup).

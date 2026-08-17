@@ -1,0 +1,22 @@
+---
+title: "TMA-109 — Bike detail"
+sidebarTitle: "TMA-109"
+description: "TMA-109 public marketplace bike detail"
+---
+
+## Summary
+
+TMA-109: marketplace **bike detail** (phase 1.5) after TMA-169 catalog. Public GET detail \+ media \+ condition \+ variants (EV colors) \+ related. Git: `docs/api/MARKETPLACE_BIKE_DETAIL_API.md`.
+
+## HTTP
+
+`GET /api/v1/marketplace/listings/{bike_id}/` and nested `/media/`, `/condition-analysis/`, `/variants/`, `/related/`.
+
+## Invariants
+
+Public AllowAny. Sold/hidden listings must not appear as buyable. EV variants optional rows in `bikes_marketplace_variant`.
+
+## Do not
+
+- Do not require Cognito to browse detail.
+- Do not confuse dealer Hub bike detail (`/api/v1/bikes/{id}/`) with this public marketplace detail.

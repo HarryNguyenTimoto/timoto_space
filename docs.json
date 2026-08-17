@@ -36,6 +36,13 @@
     },
     "groups": [
       {
+        "group": "Architecture",
+        "pages": [
+          "architecture/big-picture",
+          "architecture/data-ai-infra"
+        ]
+      },
+      {
         "group": "Features",
         "pages": [
           "features/zalo-login",
@@ -43,9 +50,40 @@
         ]
       },
       {
+        "group": "Systems",
+        "pages": [
+          "systems/timoto-mobile",
+          "systems/dealer-portal",
+          "systems/timoto-internal-app",
+          "systems/timoto-ai-web",
+          "systems/chototcaodulieu"
+        ]
+      },
+      {
+        "group": "Product",
+        "pages": [
+          "product/ticket-index",
+          "product/tma-79",
+          "product/tma-109",
+          "product/tma-168",
+          "product/tma-169",
+          "product/ia-pricing"
+        ]
+      },
+      {
         "group": "Flows",
         "pages": [
           "flows/sell-to-pickup"
+        ]
+      },
+      {
+        "group": "APIs",
+        "pages": [
+          "apis/overview",
+          "apis/mobile",
+          "apis/internal",
+          "apis/dealer",
+          "apis/s2s-hmac"
         ]
       },
       {

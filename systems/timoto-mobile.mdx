@@ -1,0 +1,39 @@
+---
+title: "System: timoto-mobile"
+sidebarTitle: "timoto-mobile"
+description: "Rider app Apps/ + Django api.timoto.ai"
+---
+
+## Summary
+
+**timoto-mobile** is the rider product: React Native `Apps/` (not legacy `TiMotoAI/`) \+ Django `backend/` on `api.timoto.ai`. Default DRF auth is Cognito JWT, but many bike/upload/OCR/evaluate routes are still **AllowAny** with device\_id checks.
+
+## Repos / files
+
+- App: `Apps/src/` — API `Apps/src/api/endpoints.ts`
+- Django urls: `backend/config/urls.py` \+ `backend/apps/*/urls.py`
+- Postman (101 requests): `backend/postman/Timoto_API.postman_collection.json`
+- Local tests: `python manage.py test --settings=config.settings_test`
+
+## Frontend ↔ backend
+
+App uses REST to `API_BASE` (`https://api-staging.timoto.ai` / `https://api.timoto.ai`) plus WebSocket `:8443` with Cognito token (`apps/src/services/realtimeOperatorReview.ts`). The app **never** calls internal HMAC or gRPC. Dealer URL `https://dealer.timoto.ai` is for Zalo dealer OAuth, not seller evaluate.
+
+## Backend ↔ others
+
+- AI: gRPC `EvaluateByBikeId`
+- Internal: HMAC GET operator-offer; `pg_notify` operator\_channel; webhook new-submission
+- Dealer: checkout S2S, `bike-unavailable`; inbound paid-hook \+ buyer-found HMAC
+
+## Gaps vs app code
+
+`marketplaceBuyService.ts` calls `/marketplace/purchase-orders/` and `/marketplace/payments/` — **no matching `urls.py`**. Treat as WIP. Do not document as live.
+
+## Tests
+
+~234 Django tests, not fail-hard in CI until `backend-ci.yml` is fixed. Jest in `Apps/` not in CI. See testing plan §8.
+
+## Do not
+
+- Do not put `OPERATOR_OFFER_INTERNAL_HMAC_SECRET` in the app.
+- Do not call `/api/v1/evaluation/full/` from Apps — production is `/bikes/{id}/evaluate/`.

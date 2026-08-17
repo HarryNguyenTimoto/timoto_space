@@ -1,0 +1,18 @@
+---
+title: "System: TiMoto-AI-Web (landing)"
+sidebarTitle: "TiMoto-AI-Web"
+description: "Public landing only — not the evaluate engine"
+---
+
+## Summary
+
+**TiMoto-AI-Web** is the public marketing landing (hero, steps, App Store CTAs). Routes: `/` and `/landingpage`. It does **not** run evaluate. Contact form currently logs to console. `VITE_API_BASE_URL=https://dealer.timoto.ai/api` in env is **unused by the UI**.
+
+Waitlist Lambda exists only as `infrastructure/waitlist/.build/` (DynamoDB, CORS `timoto.ai`). Landing page is **not connected** to it.
+
+Likely served as ECS `timoto-landing` behind `timoto.ai`. Real AI is `timoto-ai-service` on the mobile cluster.
+
+## Do not
+
+- Do not send evaluate traffic here.
+- Do not treat waitlist `.build` as a maintained source tree until handler source is restored.

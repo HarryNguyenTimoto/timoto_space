@@ -1,0 +1,21 @@
+---
+title: "IA pricing (IA-90 / missing IA-73/79)"
+sidebarTitle: "IA pricing"
+description: "OPS FMP input (IA-90 in git; IA-73/79 Word missing)"
+---
+
+## Summary
+
+IA-73 and IA-79 Word files were not on disk. In git, OPS pricing UI is referenced as **IA-90**: OPS types FMP (`offer_to_user`) \+ resale (`resale_price` ≤ FMP). Blind TIPP: listing/TIPP are read-only previews; persist on submit.
+
+## HTTP
+
+`POST /api/submissions/{bike_id}/pricing/` then `POST .../submit/`.
+
+## Files
+
+`docs/FE_FMP_TIPP_DUAL_PRICE.md`, `backend/bikes/tipp_pricing.py`, `submissions_api.py`.
+
+## Do not
+
+- Do not show TIPP as an editable OPS field before submit (product rule).

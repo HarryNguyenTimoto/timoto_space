@@ -1,0 +1,40 @@
+---
+title: "API: dealer portal"
+sidebarTitle: "Dealer API"
+description: "dealer.timoto.ai /api/v1 + checkout"
+---
+
+## Summary
+
+Base: `https://dealer.timoto.ai/api/v1`. Root map: `timoto-dealer-portal/backend/timoto/urls.py`. FE contract: `timoto_dealer_portal_v2/docs/CONTRACT.md`.
+
+## Groups
+
+| Area | Prefix | Notes |
+| --- | --- | --- |
+| Health | `/health/` | Public |
+| Auth | `/auth/` | OTP, Zalo, profile; also legacy `/api/auth/` |
+| Catalog | `/catalog/` | Combos Hub |
+| Orders | `/orders/` | Dealer orders |
+| Bikes | `/bikes/` | Assessment list |
+| AI report | `/bikes/{id}/ai-report/` | Reads `BikeEvaluationResult` — no gRPC |
+| Notifications | `/notifications/` |  |
+| Auctions | `/auctions/` | Legacy |
+| Payments | `/payments/` | Checkout \+ dealer-order |
+| Inventory S2S | `/internal/inventory/bike-unavailable/` | Mobile → dealer |
+| VietQR | `/api/token_generate` Basic; `/bank/api/transaction-sync` Bearer | Paid trigger |
+
+## Checkout (mobile buy)
+
+| Method | Path | Consumer |
+| --- | --- | --- |
+| POST | `/payments/checkouts/` | Mobile S2S / dealer |
+| GET | `/payments/checkouts/{id}/` | Poll |
+| POST | `/payments/checkouts/{id}/qr/` | VietQR |
+| POST | `/payments/dealer-order/create/` | Dealer FE (actual FE path) |
+
+Paid-hook: dealer → mobile `POST /api/v1/internal/payments/checkout-paid/` HMAC. Full text: dealer `docs/api/SHARED_CHECKOUT_CONTRACT.md`.
+
+## FE drift
+
+Dealer v2 `APIs.ts` uses `/payments/dealer-order/create/` not always CONTRACT `POST /orders/{id}/pay/`. Notifications in CONTRACT may not be in `APIs.ts` (OneSignal separate).

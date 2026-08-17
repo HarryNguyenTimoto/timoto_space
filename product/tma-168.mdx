@@ -1,0 +1,28 @@
+---
+title: "TMA-168 — Pickup reschedule"
+sidebarTitle: "TMA-168"
+description: "TMA-168 cancel pickup without killing the sale"
+---
+
+## Summary
+
+TMA-168: seller **cancels a pickup appointment** without wiping the sale. Must land on **Đặt lại lịch** with the same `bike_id`, chốt giá, `operator_review_request_id`. Full “hủy bán” is a different CTA (sale-history cancel).
+
+## HTTP
+
+- Cancel appointment: `PATCH /api/v1/bikes/pickup-schedule/{id}/` `{status: cancelled}`
+- New slot: `POST /api/v1/bikes/pickup-schedule/`
+- After success, vehicle `awaiting_pickup`. Internal gets `pickup_scheduled` NOTIFY again.
+
+## Invariants
+
+- Do not navigate to Register Sell step 0 after appointment cancel.
+- Copy must distinguish **Hủy lịch hẹn** vs **Hủy bán xe**.
+
+## Tests
+
+Strongest Django suite is pickups. Lock regressions with TMA-168-named tests when product changes the rule.
+
+## Files
+
+`docs/pr/TMA-PICKUP-RESCHEDULE_PRD.md`, `docs/api/FRONTEND_PICKUP_SCHEDULE_API.md`.
