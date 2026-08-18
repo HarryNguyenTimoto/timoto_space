@@ -1,0 +1,61 @@
+---
+title: "Master 6-Repository Knowledge Base & Execution Tracker"
+sidebarTitle: "Master 6-Repo Manifest"
+description: "Central execution manifest tracking reverse-engineering status across all 6 TiMoto codebases"
+---
+
+# Master 6-Repository Architecture Knowledge Base
+
+This documentation represents an exhaustive, zero-handwaving line-by-line reverse-engineering of the entire TiMoto platform across **6 codebases**:
+
+1. **`timoto-mobile`**: Rider & Seller React Native Application (`Apps/src/`) & Backend (`backend/apps/bikes/`).
+2. **`timoto-internal-app`**: Operations Web & Mobile Application (`backend/bikes/`, `backend/ops_auth/`).
+3. **`timoto-dealer-portal`**: B2B Dealer Django Backend Engine (`backend/catalog/`, `backend/orders/`, `backend/payments/`).
+4. **`timoto_dealer_portal_v2`**: Modern B2B Dealer React SPA (`frontend/src/`).
+5. **`TiMoto-AI-Web`**: AWS Lambda Serverless Waitlist & Public AI Marketing (`infrastructure/waitlist/`, `frontend/src/`).
+6. **`chototcaodulieu`**: Data Ingestion Engine & Scraping Pipeline (`chotot.py`, `lambda_handler.py`, `refresh_handler.py`).
+
+---
+
+## 1. Documentation Manifest (`DOCS_MANIFEST.json`)
+
+```json
+{
+  "last_updated": "2026-08-18T17:00:00Z",
+  "repos": [
+    "timoto-mobile",
+    "timoto-internal-app",
+    "timoto-dealer-portal",
+    "timoto_dealer_portal_v2",
+    "TiMoto-AI-Web",
+    "chototcaodulieu"
+  ],
+  "status": "FULLY_INDEXED",
+  "pages_created": [
+    "systems/six-repos-map",
+    "systems/screen-api-registry",
+    "features/instant-sell-purchases",
+    "features/dual-price-listing",
+    "features/pickup-reschedule",
+    "apis/mobile-verify-otp",
+    "apis/ops-submit-pricing",
+    "scraper/crawler-architecture",
+    "internal-app/deposit-payout-engine",
+    "ai-web/waitlist-lead-capture",
+    "dealer-portal/hub-and-checkout"
+  ]
+}
+```
+
+---
+
+## 2. Navigation Overview
+
+Use the sidebar navigation to access specific deep dives:
+
+- **Systems Architecture**: `systems/six-repos-map` & `systems/screen-api-registry`
+- **Core Features**: Dual Pricing (`features/dual-price-listing`), Pickup Reschedule (`features/pickup-reschedule`), Instant Sell (`features/instant-sell-purchases`).
+- **Scraping Pipeline**: Scraper Architecture (`scraper/crawler-architecture`).
+- **Operations & Payouts**: Payout Engine (`internal-app/deposit-payout-engine`).
+- **Dealer Platform**: Dealer Hub (`dealer-portal/hub-and-checkout`).
+- **Serverless AI**: Lead Capture (`ai-web/waitlist-lead-capture`).

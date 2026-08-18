@@ -1,0 +1,84 @@
+---
+title: "Dealer Hub & Shared Checkout Contract"
+sidebarTitle: "Dealer Hub & Checkout"
+description: "Exhaustive specification of the modern dealer platform SPA, combo inventory locking, VietQR integration, and S2S payment hook callbacks"
+---
+
+## 1. Overview & Business Intent
+
+- **Business Role**: **timoto\_dealer\_portal\_v2** (SPA) & **timoto-dealer-portal** (Backend) allow authorized motorcycle dealers to browse curated multi-bike combos, verify AI inspection reports, and purchase inventory via automated VietQR payments.
+- **Actors**: Authorized B2B Dealers, Dealer Ops Admin, Payment Gateway (VietQR), S2S Shared Checkout Service.
+- **Target Repos**: `timoto_dealer_portal_v2` (`frontend/src/pages/HomePage.tsx`, `BikeContent.tsx`, `YourOrder.tsx`), `timoto-dealer-portal` (`backend/orders/combo_inventory.py`, `backend/payments/checkout_views.py`).
+
+---
+
+## 2. End-to-End Flow & Sequence Diagram
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Dealer as B2B Dealer (SPA)
+  participant FE as Dealer SPA (ConfirmationPay.tsx)
+  participant BE as Dealer Backend (orders/views.py)
+  participant Inv as Inventory Lock (combo_inventory.py)
+  participant Pay as Shared Checkout (checkout_views.py)
+  participant QR as VietQR Gateway
+
+  Dealer->>FE: Selects Combo & Clicks "Thanh Toán VietQR"
+  FE->>BE: POST /api/v1/orders/ (combo_ids=[...])
+  BE->>Inv: reserve_combos_for_order(order)
+  Inv->>Inv: Set Combo is_active = False
+  BE->>Pay: POST /payments/checkouts/
+  Pay->>QR: Generate VietQR Payload & Image URL
+  QR-->>Pay: 200 OK (QR Image + Transaction Ref)
+  Pay-->>FE: 200 OK { vietqr_image_url, payment_code }
+  Dealer->>QR: Scans QR & Transfers Money via Mobile Banking
+  QR->>Pay: POST /payments/webhook/paid/
+  Pay->>BE: POST /paid_hook_url (HMAC Signed Callback)
+  BE->>BE: Update Order payment_status = PAID, delivery_status = PROCESSING
+```
+
+---
+
+## 3. Detailed API Contracts
+
+### A. Create Checkout Payment Session
+
+- **HTTP Method & Route**: `POST /api/v1/payments/checkouts/`
+- **Auth & Headers**: Bearer JWT (`Authorization: Bearer <IdToken>`).
+- **Request Body**:
+  ```json
+  {
+    "order_id": "11223344-5566-7788-9900-aabbccddeeff",
+    "payment_method": "VIETQR",
+    "amount_vnd": 65000000,
+    "paid_hook_url": "https://dealer.timoto.ai/api/v1/orders/webhook/paid/"
+  }
+  ```
+- **Success Response (200 OK)**:
+  ```json
+  {
+    "checkout_id": "chk_8f9e0d1c2b3a",
+    "vietqr_image_url": "https://img.vietqr.io/image/970407-19038475629011-compact.png?amount=65000000&addInfo=TIMOTO6ZMJ63",
+    "payment_code": "TIMOTO6ZMJ63",
+    "expires_at": "2026-08-18T18:30:00Z"
+  }
+  ```
+
+---
+
+## 4. Database Schema & State Machine
+
+### Models (`combos`, `dealer_orders`, `checkouts`)
+
+```mermaid
+stateDiagram-v2
+  [*] --> CREATED : Order Placed (Combos Reserved)
+  CREATED --> PAID : VietQR Webhook Paid
+  PAID --> DELIVERING : Ops Assigns Shipping
+  DELIVERING --> DELIVERED : Received by Dealer
+  
+  CREATED --> CANCELLED : Timeout / Payment Failed (Combos Released)
+```
+
+- **Safety Guard**: `reserve_combos_for_order` marks referenced combos as `is_active=False` within a `transaction.atomic()` block to prevent double-purchasing by competing dealers.

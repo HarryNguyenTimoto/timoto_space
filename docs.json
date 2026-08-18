@@ -62,7 +62,12 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry"
+          "systems/screen-api-registry",
+          "scraper/crawler-architecture",
+          "internal-app/deposit-payout-engine",
+          "ai-web/waitlist-lead-capture",
+          "dealer-portal/hub-and-checkout",
+          "systems/master-manifest"
         ]
       },
       {
