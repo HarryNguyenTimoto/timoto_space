@@ -49,7 +49,8 @@
           "features/zalo-login",
           "features/cavet-ocr",
           "features/dual-price-listing",
-          "features/pickup-reschedule"
+          "features/pickup-reschedule",
+          "features/instant-sell-purchases"
         ]
       },
       {
@@ -59,7 +60,8 @@
           "systems/dealer-portal",
           "systems/timoto-internal-app",
           "systems/timoto-ai-web",
-          "systems/chototcaodulieu"
+          "systems/chototcaodulieu",
+          "systems/six-repos-map"
         ]
       },
       {
