@@ -1,0 +1,67 @@
+---
+title: "Deterministic Orchestrator Architecture & Queue Runner"
+sidebarTitle: "Deterministic Orchestrator"
+description: "Specification and runner configuration of deep_doc_orchestrator.py, managing persistent task queue (tasks_queue.json), quality gates (>600 words, DDL, Mermaid, zero placeholders), and subagent context isolation."
+---
+
+# 1. Overview & Architecture Intent
+
+To solve the 3 core AI documentation bottlenecks (Max Step Limits, Context Degradation, and No Persistent Queue), the **Deterministic Orchestrator Engine** (`deep_doc_orchestrator.py`) introduces a task-queue-driven, isolated-context execution loop across all 6 repositories.
+
+### Key Components
+
+- **Task Queue Persistent File**: `tasks_queue.json` (Stores 268 deduplicated target module tasks).
+- **Quality Gate Audit**: Rejects any generated page under 600 words, missing Mermaid sequence/state diagrams, missing DB schemas/tables, or containing lazy placeholders (`// ... rest of code`).
+- **Subagent Runner Protocol**: Executes isolated, single-task subagent sessions per module, ensuring clean context memory.
+
+---
+
+# 2. Sequence & Execution Flow Diagram
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Script as Orchestrator (deep_doc_orchestrator.py)
+  participant Queue as Persistent Queue (tasks_queue.json)
+  participant Agent as Task-Isolated Subagent
+  participant QG as Quality Gate Validator
+  participant Mint as Mintlify (docs.json)
+
+  Script->>Queue: Load or Initialize Queue (268 Tasks)
+  loop For Each Pending Task
+    Script->>Queue: Mark Task Status = IN_PROGRESS
+    Script->>Agent: Spawn Fresh Agent Session (Target: Single File)
+    Agent->>Agent: Scan File & Dependents -> Write MDX
+    Script->>QG: Audit Generated MDX File
+    alt Quality Gate Failed (Words < 600 or Placeholders found)
+      QG-->>Script: REJECTED (Reason + Retry Count)
+      Script->>Agent: Retry Session (Max 3 attempts)
+    else Quality Gate Passed
+      QG-->>Script: PASSED (Word Count)
+      Script->>Mint: Register Page in mint.json
+      Script->>Queue: Mark Task Status = COMPLETED
+    end
+  end
+```
+
+---
+
+# 3. Quality Gate Rule Matrix
+
+| Gate Rule | Threshold / Requirement | Rejection Reason Output |
+| --- | --- | --- |
+| **Length Floor** | $$\ge 600$$ words | `"Content too short (N words, required > 600 words)"` |
+| **Diagram Presence** | Must contain ````mermaid` | `"Missing Sequence or State Machine Mermaid Diagram"` |
+| **Database Schema** | Must contain DDL / Table matrix | `"Missing DB Schema / DDL Table / Error Catalog Matrix"` |
+| **Zero-Placeholder** | No `// ... rest of code` or `TODO` | `"Contains lazy placeholder (// ... rest of code or TODO)"` |
+
+---
+
+# 4. Usage Instructions
+
+Run the orchestrator locally or inside any Agent CLI session:
+
+```bash
+# Initialize and audit queue state across 6 repos
+python3 /Users/toannguyen/chototcaodulieu/deep_doc_orchestrator.py
+```
