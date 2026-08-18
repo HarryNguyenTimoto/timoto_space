@@ -61,7 +61,8 @@
           "systems/timoto-internal-app",
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
-          "systems/six-repos-map"
+          "systems/six-repos-map",
+          "systems/screen-api-registry"
         ]
       },
       {
