@@ -1,0 +1,122 @@
+---
+title: "Complete screen-to-API registry"
+sidebarTitle: "Screen & API registry"
+description: "Exhaustive binding registry linking every UI screen in rider, OPS, and dealer apps to backend APIs, models, and DB columns"
+---
+
+## Overview
+
+This registry maps **every single UI screen** across all 3 client applications (`timoto-mobile`, `timoto-internal-app`, `timoto_dealer_portal_v2`) to its backing backend API endpoints, HTTP methods, request/response models, database columns, and business rules.
+
+---
+
+## 1. Rider App (`timoto-mobile`)
+
+### A. Authentication & Onboarding
+
+- **`EnterPhone` (`apps/src/pages/Auth/EnterPhone.tsx`)**
+  - **API**: `POST /api/v1/auth/otp/request/`
+  - **Payload**: `{ "phone_number": "+84901234567" }`
+  - **200 Response**: `{ "ok": true, "session_id": "uuid", "expires_in": 120 }`
+  - **DB Mutation**: Inserts record into `bikes_otpsession` (`phone_number`, `otp_hash`, `expires_at`).
+  - **Next Screen**: `VerifyOTP` (`{ phoneNumber, sessionId }`).
+- **`VerifyOTP` (`apps/src/pages/Auth/VerifyOTP.tsx`)**
+  - **API**: `POST /api/v1/auth/otp/verify/`
+  - **Payload**: `{ "session_id": "uuid", "otp_code": "123456" }`
+  - **200 Response**: `{ "ok": true, "access_token": "jwt", "refresh_token": "jwt", "user": { "user_id": "uuid", "phone_number": "..." } }`
+  - **FE Binding**: Stores JWT tokens in secure storage. Updates Redux `authSlice`.
+  - **Next Screen**: `Home` (or `Step01` if resuming sell flow).
+
+---
+
+### B. Bike Valuation & Image Capture Journey
+
+- **`Step00_CavetOCR` (`apps/src/pages/SellBike/Step00_CavetOCR.tsx`)**
+  - **API**: `POST /api/v1/bikes/ocr/cavet/`
+  - **Payload**: `MultipartFormData` (`file: image/jpeg`)
+  - **200 Response**: `{ "brand": "Honda", "model": "SH 150i", "license_plate": "59F1-12345", "capacity": "150cc", "year": 2021 }`
+  - **Next Screen**: `Step01_BasicInfo` (Auto-fills extracted OCR fields).
+- **`Step01_BasicInfo` (`apps/src/pages/SellBike/Step01_BasicInfo.tsx`)**
+  - **API**: `POST /api/v1/bikes/`
+  - **Payload**: `{ "brand": "Honda", "model": "SH 150i", "year": 2021, "license_plate": "59F1-12345", "mileage": 15000, "capacity": "150cc", "color": "Trắng", "condition": "nhu_moi" }`
+  - **200 Response**: `{ "bike_id": "uuid", "masked_bike_id": "SH150I-2021" }`
+  - **DB Write**: `bikes_bike` (`bike_id`, `user_id`, `brand`, `model`, `year`, `license_plate`, `mileage`, `condition`).
+  - **Next Screen**: `Step02_CameraCapture`.
+- **`Step02_CameraCapture` (`apps/src/pages/SellBike/Step02_CameraCapture.tsx`)**
+  - **API 1**: `POST /api/v1/media/presign-url/` -\> Get S3 PUT URLs for 8 required vehicle angles (Front, Rear, Left, Right, Odometer, Engine, Cavet Front, Cavet Back).
+  - **API 2**: `POST /api/v1/media/batch/` -\> Save uploaded S3 URLs against `bike_id`.
+  - **Next Screen**: `Step03_VideoAudioCapture` (1 video $$\le$$ 30s \+ 1 engine audio recording $$\le$$ 15s).
+- **`Step04_EvaluateProcessing` (`apps/src/pages/SellBike/Step04_EvaluateProcessing.tsx`)**
+  - **API**: `POST /api/v1/evaluation/evaluate/async/`
+  - **Payload**: `{ "task_id": "uuid" }`
+  - **200 Response**: `{ "task_id": "uuid", "status": "PENDING" }`
+  - **WebSocket / Polling**: Subscribes to `ws/valuation_ready/` or polls `GET /api/v1/evaluation/result/{bike_id}/`.
+  - **Next Screen**: `BikeValuationResult`.
+
+---
+
+### C. Dual Price Selection & Polling (`two_price` branch)
+
+- **`BikeValuationResult` (`apps/src/pages/BikeValuationResult.tsx`)**
+  - **API**: `GET /api/v1/evaluation/result/{bike_id}/`
+  - **200 Response**: `{ "status": "COMPLETED", "fair_market_price_vnd": 35000000, "listing_price_vnd": 36500000, "instant_price_vnd": 30000000 }`
+  - **User Selection A (Bán nhanh)**: `POST /api/v1/evaluation/price-selection/{bike_id}/` (`option: "instant_purchase"`).
+    - **Next Screen**: `SetScheduleToShip` (`purpose: "instant_purchase_pickup"`).
+  - **User Selection B (Đăng bán giá cao)**: `POST /api/v1/evaluation/price-selection/{bike_id}/` (`option: "listing"`).
+    - **Next Screen**: `OrderSaleDetail` (`confirm_seller_listing`).
+- **`OrderSaleDetail` (`apps/src/pages/ChoosePrice/OrderSaleDetail.tsx`)**
+  - **API 1**: `POST /api/v1/evaluation/listing/{bike_id}/confirm/` -\> `{ "ok": true, "listing": { "status": "waiting_buyer", "poll_after_seconds": 30 } }`.
+  - **API 2 (Polling)**: `GET /api/v1/evaluation/listing/{bike_id}/` every 30s.
+    - If `status == "waiting_buyer"`: Shows blue status banner \+ `Bán nhanh ngay` & `Hủy đăng tin` CTAs.
+    - If `status == "buyer_found"`: Shows green success banner \+ `Đặt lịch ký gửi` CTA.
+  - **API 3 (Switch)**: `POST /api/v1/evaluation/listing/{bike_id}/switch-to-instant-purchase/` -\> Clears listing, routes to pickup scheduler.
+  - **API 4 (Cancel)**: `POST /api/v1/evaluation/listing/{bike_id}/cancel/` -\> Sets listing status `cancelled`.
+
+---
+
+## 2. Internal Ops App (`timoto-internal-app`)
+
+### A. Valuations & Submissions
+
+- **`SubmissionList` (`apps/src/pages/SubmissionList.tsx`)**
+  - **API**: `GET /api/submissions/?status=PENDING_OPERATOR_REVIEW`
+  - **Next Screen**: `SubmissionDetail` (`{ bikeId }`).
+- **`SubmissionDetail` (`apps/src/pages/SubmissionDetail.tsx`)**
+  - **API 1**: `GET /api/submissions/{bike_id}/` -\> Returns AI evaluation report, images, audio, video.
+  - **API 2 (Pricing)**: `POST /api/submissions/{bike_id}/pricing/` -\> Body: `{ "offer_to_user": 25000000, "resale_price": 30000000 }`.
+  - **API 3 (Submit)**: `POST /api/submissions/{bike_id}/submit/` -\> Computes FMP rates, snapshots `PricingEntry`, fires HMAC webhook to rider app.
+
+---
+
+### B. Instant Sell Purchases Lifecycle (`feature/instant-sell-ia-79`)
+
+- **`Purchase` (`apps/src/pages/Purchase.tsx`)**
+  - **API**: `GET /api/purchases/?view=day&date=YYYY-MM-DD&scope=queue`
+  - **FE Binding**: Calendar day picker, queue/history tabs, countdown timer per pickup window.
+- **`WaitingPickupDetail` (`apps/src/pages/WaitingPickupDetail.tsx`)**
+  - **API 1**: `GET /api/purchases/{bike_id}/`
+  - **API 2**: `PATCH /api/purchases/{bike_id}/bank/` (`account_name`, `account_number`, `bank_name`, `bank_bin`).
+  - **API 3**: `POST /api/purchases/{bike_id}/inspection/pass/` (`actual_odometer`, `inspection_notes`, `sale_channel`).
+  - **API 4**: `POST /api/purchases/{bike_id}/deposit/pay/` (Payout 50% deposit).
+  - **API 5**: `POST /api/purchases/{bike_id}/confirm-pickup/` (`bike_matches_listing: true`, `deposit_paid_confirmed: true`).
+- **`PurchaseProgress` (`apps/src/pages/PurchaseProgress.tsx`)**
+  - **API 1**: `POST /api/purchases/{bike_id}/notary/confirm/` (`seller_signed: true`, `notary_confirmed_transfer: true`).
+  - **API 2**: `POST /api/purchases/{bike_id}/remaining/pay/` (Payout remaining 50%).
+  - **API 3**: `POST /api/purchases/{bike_id}/complete/` (`documents_received: true`, `remaining_paid_confirmed: true`).
+
+---
+
+## 3. Dealer Portal SPA (`timoto_dealer_portal_v2`)
+
+### A. Catalog & Detail
+
+- **`BikeContent` (`frontend/src/components/BikeContent.tsx`)**
+  - **API**: `GET /api/v1/catalog/bikes/?brand=Honda&price_min=10000000&price_max=50000000`
+  - **200 Response**: `{ "count": 10, "results": [{ "combo_id": "uuid", "masked_combo_id": "6ZMJ63", "name": "Honda SH 150i Combo", "price": 45000000, "is_active": true }] }`
+- **`ConfirmationPay` (`frontend/src/components/ConfirmationPay.tsx`)**
+  - **API**: `POST /api/v1/orders/`
+  - **Payload**: `{ "items": [{ "combo_id": "uuid" }], "delivery_location": "TP. Hồ Chí Minh", "payment_method": "vietqr" }`
+  - **Next Screen**: `PayQR` (`{ orderId }`).
+- **`YourOrder` (`frontend/src/components/YourOrder.tsx`)**
+  - **API**: `GET /api/v1/orders/`
+  - **FE Binding**: Status tabs (`Tất cả`, `Đang giao`, `Đã giao`, `Đã hủy`), action buttons (`Thanh toán VietQR`, `Xác nhận đã nhận xe`, `Hủy đơn`).
