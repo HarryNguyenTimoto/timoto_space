@@ -99,7 +99,9 @@
           "apis/postman-mobile-bikes",
           "apis/postman-mobile-market",
           "apis/postman-dealer",
-          "apis/postman-internal"
+          "apis/postman-internal",
+          "apis/mobile-verify-otp",
+          "apis/ops-submit-pricing"
         ]
       },
       {
