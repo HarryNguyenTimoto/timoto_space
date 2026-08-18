@@ -1,0 +1,62 @@
+---
+title: "Six-repo system architecture"
+sidebarTitle: "6-Repo architecture"
+description: "Complete 6-repo system topology, data boundaries, and traffic flow"
+---
+
+## 1. Six-Repo Topology Map
+
+```mermaid
+flowchart TD
+    subgraph Rider Mobile App
+        RM[timoto-mobile / RN App]
+        RBE[api.timoto.ai / Django]
+    end
+
+    subgraph Internal Ops
+        OPS_WEB[timoto-internal-app / Web SPA]
+        OPS_RN[timoto-internal-app / RN App]
+        OPS_BE[internal.timoto.ai / Django]
+    end
+
+    subgraph Dealer Network
+        DH_FE[timoto_dealer_portal_v2 / SPA]
+        DH_BE[dealer.timoto.ai / NLB + Django]
+    end
+
+    subgraph Data Scraping
+        CT[chototcaodulieu / Scraper & DynamoDB]
+    end
+
+    subgraph Landing Web
+        WEB[TiMoto-AI-Web / Vite Landing]
+        W_LAMBDA[Waitlist Lambda + DynamoDB]
+    end
+
+    RM -->|REST / API| RBE
+    OPS_WEB -->|REST / API| OPS_BE
+    OPS_RN -->|REST / API| OPS_BE
+    DH_FE -->|REST / API| DH_BE
+
+    RBE <-->|Dual DB Sync / NOTIFY| OPS_BE
+    OPS_BE -->|S2S HMAC / Inventory Sync| DH_BE
+    WEB -->|Public Waitlist POST| W_LAMBDA
+```
+
+## 2. Repo Ownership Matrix
+
+| # | Repo | Host / Domain | Tech Stack | Production Data Ownership |
+| --- | --- | --- | --- | --- |
+| 1 | `timoto-mobile` | `api.timoto.ai` | React Native (iOS/Android), Django 4.x, Postgres | Rider auth, vehicle valuation requests, rider pickup appointments, listing selections. |
+| 2 | `timoto-internal-app` | `internal.timoto.ai` | React Web, React Native, Django 4.x, Postgres | Operator reviews, Fair Market Price (FMP) valuations, `pricing_entries`, 8-step Instant Sell purchase lifecycle. |
+| 3 | `timoto-dealer-portal` | `dealer.timoto.ai` | AWS Fargate (NLB), Django, Postgres | Dealer auth (Cognito \+ Zalo), combo inventory catalog, shared checkouts, VietQR payments. |
+| 4 | `timoto_dealer_portal_v2` | `dealer.timoto.ai` | React SPA (Vite/Tailwind) | Dealer Hub frontend UI, catalog browser, order manager, QR checkout UI. |
+| 5 | `TiMoto-AI-Web` | `timoto.ai` | React Vite, Serverless Lambda, DynamoDB | Public marketing waitlist signups only (isolated from core DB). |
+| 6 | `chototcaodulieu` | N/A (Cron / Lambda) | Python 3.12, AWS Lambda, DynamoDB, S3 | Chotot market price scraping dataset (isolated data lake). |
+
+## 3. Database Boundaries
+
+- **Rider & Internal DB (`Postgres`)**: `timoto-mobile` and `timoto-internal-app` share or synchronize core Postgres tables (`bikes_bike`, `bikes_bikepickupschedule`, `ops_auth_pricingentry`, `bike_sale_records`). Sync occurs via DB triggers and Postgres `NOTIFY` events (`ops_events.py`).
+- **Dealer Portal DB (`Postgres`)**: Dedicated Aurora database for `timoto-dealer-portal` storing combos, dealer accounts, orders, and shared checkouts. Inventory changes (e.g. bike sold in mobile) sync via S2S REST `POST /api/v1/internal/inventory/bike-unavailable/`.
+- **Scraper DB (`DynamoDB - chotot-xe-may`)**: Scraping data lives strictly inside DynamoDB and S3 CSV exports. No direct queries from rider or dealer apps.
+- **Landing Waitlist DB (`DynamoDB - Waitlist`)**: Isolated DynamoDB table written directly by AWS Lambda handler.
