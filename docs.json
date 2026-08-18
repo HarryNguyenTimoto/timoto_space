@@ -62,7 +62,9 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry"
+          "systems/screen-api-registry",
+          "internal-app/inspection-engine",
+          "scraper/data-normalization"
         ]
       },
       {
