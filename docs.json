@@ -62,7 +62,14 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry"
+          "systems/screen-api-registry",
+          "systems/mobile-analytics-airbridge",
+          "systems/mobile-realtime-orr-assign",
+          "systems/mobile-feedback",
+          "systems/mobile-options-fmp",
+          "systems/mobile-evaluation-upload",
+          "systems/mobile-ocr-cavet",
+          "systems/mobile-auth-sns-otp"
         ]
       },
       {
