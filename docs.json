@@ -62,7 +62,10 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry"
+          "systems/screen-api-registry",
+          "mobile/bikes-pickup-evaluate-marketplace",
+          "internal-app/tma-db-mirrors",
+          "dealer-portal/catalog-checkout-vietqr"
         ]
       },
       {
