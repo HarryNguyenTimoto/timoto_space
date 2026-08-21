@@ -83,7 +83,8 @@
           "systems/dealer-spa-user-cache-reminders",
           "systems/scraper-image-sync-s3",
           "systems/mobile-analytics-airbridge",
-          "systems/ops-tma-db-mirrors"
+          "systems/ops-tma-db-mirrors",
+          "systems/ops-tma-webhook-new-submission"
         ]
       },
       {
