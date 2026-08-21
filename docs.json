@@ -65,7 +65,8 @@
           "systems/screen-api-registry",
           "systems/ai-web-waitlist-lambda",
           "systems/dealer-auctions-get-mutates",
-          "systems/dealer-auth-zalo-oauth"
+          "systems/dealer-auth-zalo-oauth",
+          "systems/ops-instant-sell-engine"
         ]
       },
       {
