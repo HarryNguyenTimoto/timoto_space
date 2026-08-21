@@ -1,7 +1,7 @@
 ---
 title: "TMA App Feedback: One Row Per User"
 sidebarTitle: "Mobile Feedback"
-description: "GET and POST share /api/v1/feedback/. IsAuthenticated. UniqueConstraint on user. Second POST is 400 Feedback already submitted with no upsert. Rating 1 to 5 required."
+description: "One row per user. Django admin exists. Soft-delete may reactivate on JWT. UniqueConstraint feedback_unique_per_user."
 ---
 
 # 1. Overview and Business Intent
