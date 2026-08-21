@@ -62,7 +62,8 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry"
+          "systems/screen-api-registry",
+          "systems/ai-web-waitlist-lambda"
         ]
       },
       {
