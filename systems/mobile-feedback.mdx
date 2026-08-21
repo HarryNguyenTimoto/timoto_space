@@ -6,11 +6,11 @@ description: "GET and POST share /api/v1/feedback/. IsAuthenticated. UniqueConst
 
 # 1. Overview and Business Intent
 
-After onboarding, the rider app asks why they used TiMoto and a 1-5 star rating. Product wants **one survey per account**, not a history. The table `feedback_userappfeedback` enforces that with a unique constraint on user (`feedback_unique_per_user`).
+One survey per account: usage reason plus 1-5 stars. Table `feedback_userappfeedback` enforces UniqueConstraint on user named `feedback_unique_per_user`.
 
-**Actors:** `apps/src/services/feedback.service.ts`, `backend/apps/feedback/views.py`, `models.py`, `serializers.py`.
+**Actors:** `feedback.service.ts`, `feedback/views.py`, `models.py`, `serializers.py`, `admin.py`.
 
-There is no PATCH, no admin list in this app, no anonymous device\_id path. Unauthenticated GET or POST is 401 from Cognito.
+No PATCH, no upsert. There **is** a Django admin list (`UserAppFeedbackAdmin`) — saying no admin is wrong.
 
 ---
 
@@ -24,61 +24,42 @@ sequenceDiagram
   participant DB as feedback_userappfeedback
 
   Rider->>API: GET Bearer
-  API->>DB: exists user
-  API-->>Rider: 200 has_submitted true or false
-  alt has_submitted false
-    Rider->>API: POST rating plus optional usage_reason
-    API->>DB: create
-    alt unique ok
+  API-->>Rider: 200 has_submitted
+  alt false
+    Rider->>API: POST rating
+    alt first
       API-->>Rider: 201 success true data
-    else already a row
-      API-->>Rider: 400 success false error Feedback already submitted
+    else exists
+      API-->>Rider: 400 Feedback already submitted
     end
   end
 ```
 
-```mermaid
-stateDiagram-v2
-  [*] --> not_submitted
-  not_submitted --> submitted: POST 201
-  submitted --> submitted: GET has_submitted true
-  submitted --> rejected: POST 400 already submitted
-```
-
-GET does not return the stored rating or comment. After submit, the client only knows `has_submitted` unless it kept the 201 payload in memory.
+GET does not return prior comment. Keep 201 payload client-side if needed.
 
 ---
 
 # 3. Detailed API Contracts
 
-Same path for both verbs. FE `API_ENDPOINTS.FEEDBACK.STATUS` and `SUBMIT` are both `/feedback/`.
+Same path for GET and POST. FE STATUS and SUBMIT both `/feedback/`.
 
-POST body (`SubmitFeedbackSerializer`):
-
-- `rating` integer min 1 max 5 **required**.
-- `usage_reason` optional one of: `curious_value`, `sell_extra`, `upgrade_gas`, `upgrade`, `other`.
-- `usage_reason_other` max 500, **only** when usage\_reason is `other`; otherwise validation error.
-- `comment` max 2000, optional, blank stripped to null.
-
-201 body: `success` true, `data` with `feedback_id`, `usage_reason`, `usage_reason_other`, `rating`, `comment`, `created_at`.
-
-400 validation: `success` false, `errors` serializer dict. Duplicate: `success` false, `error` exact string `Feedback already submitted`. IntegrityError from the unique constraint is **not** caught separately; the view checks `.exists()` first. Concurrent double POST can still 500 on the constraint.
+POST (`SubmitFeedbackSerializer`): rating 1-5 required; usage\_reason optional enum curious\_value, sell\_extra, upgrade\_gas, upgrade, other; usage\_reason\_other max 500 only when other; comment max 2000.
 
 | HTTP Code | Error | Trigger |
 | --- | --- | --- |
 | 401 | Cognito | missing Bearer |
-| 400 | serializer.errors | rating missing or out of 1-5, other text without other |
+| 400 | serializer.errors | rating invalid |
 | 400 | Feedback already submitted | second POST |
 | 201 | success true | first POST |
 | 200 | has\_submitted | GET |
 
-USAGE\_REASON\_CHOICES Vietnamese labels are stored as **keys** in English, not the Vietnamese label.
+Concurrent double POST can race past exists() → IntegrityError 500. Treat 400 already submitted as success-equivalent for double-tap UX.
+
+Stored keys (not Vietnamese labels): curious\_value, sell\_extra, upgrade\_gas, upgrade, other. Constants live in `apps/src/constants/feedback.ts`.
 
 ---
 
 # 4. Database Schema and Locks
-
-No `select_for_update`. Unique on user\_id is the lock equivalent.
 
 ```sql
 CREATE TABLE feedback_userappfeedback (
@@ -92,26 +73,23 @@ CREATE TABLE feedback_userappfeedback (
 );
 
 CREATE UNIQUE INDEX feedback_unique_per_user ON feedback_userappfeedback (user_id);
-CREATE INDEX feedback_user_created ON feedback_userappfeedback (user_id, created_at DESC);
+-- migration index name: feedback_us_user_id_created_idx
 ```
 
-Model rating is blank/null with 1-5 validators, but the serializer **requires** rating on POST so null rows should not appear via this API.
+No select\_for\_update.
 
 ---
 
 # 5. Frontend and UI Logic
 
-`getFeedbackStatus` types `has_submitted` boolean. `submitFeedback` expects 201 `success` plus `data`. The service does not map 400 `Feedback already submitted` to a typed union; screens must inspect axios error body.
-
-There is no edit-after-submit UI because the API has no PUT.
+`getFeedbackStatus` / `submitFeedback`. No edit-after-submit UI. Ops can inspect rows via Django admin even though the mobile API has no list endpoint.
 
 ---
 
 # 6. Edge Cases and Resilience
 
-1. UniqueConstraint race: two POSTs in flight both pass exists() then one 201 one 500 IntegrityError.
-2. GET never returns previous comment; support cannot recover text from this endpoint.
-3. `usage_reason` null is allowed; product can get a star with no reason.
-4. Cascade delete of CustomUser removes feedback.
-5. Soft-deleted users (`deleted_at`) can still POST if JWT is valid; no check on deleted\_at in this view.
-6. Queue files covered: `feedback.service.ts`, `backend/apps/feedback/models.py`, `views.py`.
+1. UniqueConstraint race → possible 500.
+2. Soft-delete: Cognito auth may **reactivate** deleted\_at users, then feedback works.
+3. Cascade delete of CustomUser removes feedback.
+4. Model rating allows null historically; serializer requires rating on POST.
+5. Future edit-after-submit needs a new endpoint plus UniqueConstraint decision.
