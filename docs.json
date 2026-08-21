@@ -80,7 +80,8 @@
           "systems/dealer-orders-dealer-lifecycle",
           "systems/mobile-s2s-operator-offer-buyer-found",
           "systems/mobile-realtime-orr-assign-owner",
-          "systems/dealer-spa-user-cache-reminders"
+          "systems/dealer-spa-user-cache-reminders",
+          "systems/scraper-image-sync-s3"
         ]
       },
       {
