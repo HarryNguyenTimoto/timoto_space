@@ -84,7 +84,9 @@
           "systems/scraper-image-sync-s3",
           "systems/mobile-analytics-airbridge",
           "systems/ops-tma-db-mirrors",
-          "systems/ops-tma-webhook-new-submission"
+          "systems/ops-tma-webhook-new-submission",
+          "systems/mobile-auth-zalo-apple",
+          "systems/mobile-auth-sns-otp"
         ]
       },
       {
