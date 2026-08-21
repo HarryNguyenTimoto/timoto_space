@@ -69,7 +69,8 @@
           "mobile/bikes-pickup-evaluate-marketplace",
           "mobile/s2s-operator-offer-buyer-found",
           "mobile/auth-zalo-apple",
-          "mobile/auth-sns-otp"
+          "mobile/auth-sns-otp",
+          "mobile/camera-hardware-bridging"
         ]
       },
       {
