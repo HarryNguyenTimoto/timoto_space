@@ -1,7 +1,7 @@
 ---
-title: "TMA Cavet OCR: Gemini 1.5 Flash AllowAny"
+title: "TMA Cavet OCR: On-Device Primary, Gemini Fallback Off"
 sidebarTitle: "Mobile OCR Cavet"
-description: "POST /api/v1/ocr/vehicle-registration/ is AllowAny. Gemini 1.5 Flash extracts owner, plate, engine, chassis. Accepts multipart image or JSON image_url or image_base64. error_code 0 success, 1 missing image, -1 processing."
+description: "On-device OCR primary; ENABLE_GEMINI_OCR_FALLBACK false. Backend AllowAny Gemini has open image_url SSRF. error_code -1 is HTTP 500."
 ---
 
 # 1. Overview and Business Intent

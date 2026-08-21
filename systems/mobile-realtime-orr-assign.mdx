@@ -1,7 +1,7 @@
 ---
 title: "Operator Review WebSocket, Assign-Owner, Bike device_id"
 sidebarTitle: "Realtime ORR Assign Owner"
-description: "RN realtimeOperatorReviewService POSTs /operator-review-requests/ then opens WS with IdToken query. valuation_ready then GET /evaluation/result/. Timeout 120s. assign-owner uses SELECT FOR UPDATE."
+description: "ORR WS then GET /evaluation/result/. No pickup_cancelled pg_notify. Cancel ORR emits valuation_cancelled type. assign-owner FOR UPDATE."
 ---
 
 # 1. Overview and Business Intent
