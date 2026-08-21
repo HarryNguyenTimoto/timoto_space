@@ -36,12 +36,28 @@
     },
     "groups": [
       {
+        "group": "Operations & Internal App",
+        "pages": []
+      },
+      {
         "group": "Architecture",
         "pages": [
           "architecture/big-picture",
           "architecture/data-ai-infra",
           "architecture/what-to-build"
         ]
+      },
+      {
+        "group": "Mobile Client",
+        "pages": []
+      },
+      {
+        "group": "Scraping & Data Pipeline",
+        "pages": []
+      },
+      {
+        "group": "AI Web & Waitlist",
+        "pages": []
       },
       {
         "group": "Features",
@@ -52,6 +68,10 @@
           "features/pickup-reschedule",
           "features/instant-sell-purchases"
         ]
+      },
+      {
+        "group": "Dealer Ecosystem",
+        "pages": []
       },
       {
         "group": "Systems",

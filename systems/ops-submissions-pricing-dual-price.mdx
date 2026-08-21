@@ -56,7 +56,7 @@ sequenceDiagram
   Sub->>Tip: apply_tipp_snapshot from offer_to_user
   alt first submit
     Sub->>DB: status SUBMITTED submitted_at now
-  Sub->>DB: SlaTracker elapsed and sla_met
+    Sub->>DB: SlaTracker elapsed and sla_met
     Sub->>Out: persist_and_queue_completion
   else already SUBMITTED
     Sub->>DB: save updated snapshot only
