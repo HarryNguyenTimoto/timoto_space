@@ -69,7 +69,8 @@
           "systems/mobile-options-fmp",
           "systems/mobile-evaluation-upload",
           "systems/mobile-ocr-cavet",
-          "systems/mobile-auth-sns-otp"
+          "systems/mobile-auth-sns-otp",
+          "systems/mobile-bikes-pickup-evaluate"
         ]
       },
       {
