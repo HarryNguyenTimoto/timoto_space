@@ -73,7 +73,8 @@
           "systems/mobile-feedback",
           "systems/mobile-ocr-cavet",
           "systems/dealer-notifications-onesignal",
-          "systems/dealer-evaluations-ai-report-scd"
+          "systems/dealer-evaluations-ai-report-scd",
+          "systems/mobile-options-fmp"
         ]
       },
       {
