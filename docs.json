@@ -74,7 +74,9 @@
           "systems/mobile-ocr-cavet",
           "systems/dealer-notifications-onesignal",
           "systems/dealer-evaluations-ai-report-scd",
-          "systems/mobile-options-fmp"
+          "systems/mobile-options-fmp",
+          "systems/scraper-chotot-pipeline-constants",
+          "systems/dealer-orders-auctions-users-models"
         ]
       },
       {
