@@ -36,11 +36,59 @@
     },
     "groups": [
       {
+        "group": "Operations & Internal App",
+        "pages": [
+          "internal-app/tma-db-mirrors",
+          "internal-app/tma-webhook-new-submission",
+          "internal-app/pickups-lifecycle",
+          "internal-app/notary-contract-signing",
+          "internal-app/instant-sell-engine",
+          "internal-app/submissions-pricing-dual-price",
+          "internal-app/bank-verification",
+          "internal-app/role-permissions-matrix",
+          "internal-app/deposit-payout-engine"
+        ]
+      },
+      {
         "group": "Architecture",
         "pages": [
           "architecture/big-picture",
           "architecture/data-ai-infra",
           "architecture/what-to-build"
+        ]
+      },
+      {
+        "group": "Mobile Client",
+        "pages": [
+          "mobile/analytics-airbridge",
+          "mobile/feedback",
+          "mobile/options-fmp",
+          "mobile/evaluation-upload",
+          "mobile/realtime-orr-assign-owner",
+          "mobile/ocr-cavet",
+          "mobile/app-architecture-navigation",
+          "mobile/sell-flow-customer",
+          "mobile/bikes-pickup-evaluate-marketplace",
+          "mobile/s2s-operator-offer-buyer-found",
+          "mobile/auth-zalo-apple",
+          "mobile/auth-sns-otp",
+          "mobile/camera-hardware-bridging"
+        ]
+      },
+      {
+        "group": "Scraping & Data Pipeline",
+        "pages": [
+          "scraper/chotot-pipeline-constants",
+          "scraper/image-sync-s3",
+          "scraper/proxy-rotation-anti-bot",
+          "scraper/parsing-deduplication"
+        ]
+      },
+      {
+        "group": "AI Web & Waitlist",
+        "pages": [
+          "ai-web/waitlist-lambda",
+          "ai-web/landing-static-deploy"
         ]
       },
       {
@@ -51,6 +99,23 @@
           "features/dual-price-listing",
           "features/pickup-reschedule",
           "features/instant-sell-purchases"
+        ]
+      },
+      {
+        "group": "Dealer Ecosystem",
+        "pages": [
+          "dealer-portal/auctions-get-mutates",
+          "dealer-portal/catalog-checkout-vietqr",
+          "dealer-portal/auth-zalo-oauth",
+          "dealer-portal/notifications-onesignal",
+          "dealer-portal/evaluations-ai-report-scd",
+          "dealer-portal/orders-dealer-lifecycle",
+          "dealer-portal/spa-user-cache-reminders",
+          "dealer-portal/users-cognito-otp",
+          "dealer-portal/orders-auctions-users-models",
+          "dealer-portal/inventory-catalog-sync",
+          "dealer-portal/migration-v1-to-v2",
+          "dealer-portal/escrow-deposit-flow"
         ]
       },
       {
