@@ -159,7 +159,8 @@
           "apis/postman-dealer",
           "apis/postman-internal",
           "apis/mobile-verify-otp",
-          "apis/ops-submit-pricing"
+          "apis/ops-submit-pricing",
+          "apis/exhaustive-api-matrix"
         ]
       },
       {
