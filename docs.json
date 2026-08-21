@@ -59,7 +59,9 @@
           "mobile/evaluation-upload",
           "mobile/realtime-orr-assign-owner",
           "mobile/ocr-cavet",
-          "mobile/app-architecture-navigation"
+          "mobile/app-architecture-navigation",
+          "mobile/sell-flow-customer",
+          "mobile/bikes-pickup-evaluate-marketplace"
         ]
       },
       {
