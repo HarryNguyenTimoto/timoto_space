@@ -80,13 +80,15 @@
         "pages": [
           "scraper/chotot-pipeline-constants",
           "scraper/image-sync-s3",
-          "scraper/proxy-rotation-anti-bot"
+          "scraper/proxy-rotation-anti-bot",
+          "scraper/parsing-deduplication"
         ]
       },
       {
         "group": "AI Web & Waitlist",
         "pages": [
-          "ai-web/waitlist-lambda"
+          "ai-web/waitlist-lambda",
+          "ai-web/landing-static-deploy"
         ]
       },
       {
