@@ -4,7 +4,7 @@ sidebarTitle: "Waitlist Lambda"
 description: "TiMoto-AI-Web infrastructure/waitlist handler.mjs: API Gateway POST OPTIONS CORS, normalize VN phone and email, Query phone-index or email-index, PutItem source landing_android_waitlist. No frontend c"
 ---
 
-# 1. Overview & Business Intent
+# 1. Overview and Business Intent
 
 The Android waitlist Lambda captures early interest from the marketing site before the Android app ships. The only application source present in this monorepo is the packaged handler at `TiMoto-AI-Web/infrastructure/waitlist/.build/package/handler.mjs` (npm package name `timoto-android-waitlist-lambda`). There is no separate TypeScript source tree beside `.build`, and the landing React app does **not** call this API yet — `LandingPage.tsx` contact submit only `console.log`s the form.
 
