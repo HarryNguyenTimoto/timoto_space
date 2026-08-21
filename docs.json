@@ -68,7 +68,8 @@
           "mobile/sell-flow-customer",
           "mobile/bikes-pickup-evaluate-marketplace",
           "mobile/s2s-operator-offer-buyer-found",
-          "mobile/auth-zalo-apple"
+          "mobile/auth-zalo-apple",
+          "mobile/auth-sns-otp"
         ]
       },
       {
@@ -119,11 +120,7 @@
           "systems/timoto-ai-web",
           "systems/chototcaodulieu",
           "systems/six-repos-map",
-          "systems/screen-api-registry",
-          "systems/ops-pickups-lifecycle",
-          "systems/ops-submissions-pricing-dual-price",
-          "systems/ops-ops-auth-jwt-fcm",
-          "systems/dealer-users-cognito-otp"
+          "systems/screen-api-registry"
         ]
       },
       {
