@@ -153,4 +153,73 @@ Price resolution: listing → `listing_price_vnd` then `offer_to_user`; instant 
 
 **No `SELECT FOR UPDATE`** in `instant_sell.py`, `purchases_api.py`, `payouts.py`, or `sale.py`. Idempotency for payouts is `UniqueConstraint(fields=['sale', 'kind'], name='uniq_bike_sale_payout_kind')` plus key `f'(record.id)::kind'`.
 
-ZZCHUNKZZ
+```sql
+CREATE TABLE bike_sale_records (
+    id UUID PRIMARY KEY,
+    bike_id UUID NOT NULL UNIQUE,
+    status VARCHAR(32) NOT NULL DEFAULT 'picked_up',
+    sale_channel VARCHAR(16) NOT NULL DEFAULT 'instant_sell',
+    purchase_price_vnd BIGINT NULL,
+    deposit_amount_vnd BIGINT NULL,
+    remaining_amount_vnd BIGINT NULL,
+    bank_account_name VARCHAR(255) NULL,
+    bank_account_number VARCHAR(64) NULL,
+    bank_name VARCHAR(128) NULL,
+    bank_bin VARCHAR(16) NULL,
+    bank_source VARCHAR(16) NULL,
+    checklist JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT bike_sale_records_status_check CHECK (status IN (
+        'inspection_passed','deposit_transferring','deposit_paid',
+        'ownership_pending','remaining_transferring','remaining_paid',
+        'picked_up','completed','failed'
+    ))
+);
+
+CREATE TABLE bike_sale_payouts (
+    id UUID PRIMARY KEY,
+    sale_id UUID NOT NULL REFERENCES bike_sale_records(id) ON DELETE CASCADE,
+    kind VARCHAR(16) NOT NULL CHECK (kind IN ('deposit','remaining')),
+    amount_vnd BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','succeeded','failed')),
+    provider VARCHAR(32) NOT NULL DEFAULT 'stub',
+    provider_ref VARCHAR(128) NULL,
+    CONSTRAINT uniq_bike_sale_payout_kind UNIQUE (sale_id, kind)
+);
+```
+
+Payout retry: existing `succeeded` snaps transferring → paid, no second bank call. Existing `pending` returns immediately. Existing `failed` reuses row, same idempotency key, calls `initiate_payout` again.
+
+`BANK_PAYOUT_MODE`: `stub` (immediate succeeded, `provider_ref=stub-:kind-:uuid4`), `async_stub` (pending until webhook), `http` (POST `BANK_PAYOUT_API_URL`, timeout 30s, header `Idempotency-Key`). Unknown mode → stub. Failed HTTP user message: `'Bank transfer failed. Escalate to Henry.'`
+
+TMA push: `(sale_status, sale_channel, purchase_price_vnd, deposit_amount_vnd, remaining_amount_vnd)`.
+
+---
+
+# 5. Frontend & UI Logic
+
+`API_PATHS.PURCHASES = '/purchases/'`. `patchPurchaseBank` is **never called from any page**.
+
+| Page | Calls | Body |
+| --- | --- | --- |
+| `Purchase.tsx` | `getPurchases` | `view`, `date`, `scope`, `q` — **no** `sale_channel` |
+| `WaitingPickupDetail.tsx` | `getPurchaseDetail` | if sale in ownership/remaining/completed → `PurchaseProgress`; else inspect → `PickupSend` |
+| `PickupSend.tsx` | pass \+ deposit pay \+ poll \+ confirm pickup | checklist four bools; confirm `(bike_matches_listing  true, deposit_paid_confirmed  true)`; modal ids `match`/`deposit` |
+| `PurchaseProgress.tsx` | notary \+ remaining \+ complete | `(seller_signed, notary_confirmed_transfer)`; complete `(documents_received, remaining_paid_confirmed)`; modal ids `seller`/`notary`, `docs`/`paid` |
+| `RejectPickupBike.tsx` | `postPurchaseReject` then `postPickupReject` on 404 | `:reason` min 5 |
+
+Poll: `pollPurchaseDetail` default `attempts=8`, `intervalMs=800`; stops if `ready(detail)` or `actions.escalate_to_henry`. Failed payout 200 extra field `escalate_to` string `'Henry'`; UI reads `actions.escalate_to_henry`.
+
+`SALE_STATUS_UI` labels: `Đã kiểm tra` (blue), `Đang chuyển tiền cọc` (orange), `Đã thanh toán cọc` (teal), `Chờ công chứng` (purple), `Đang chuyển số tiền còn lại` (orange), `Chờ hoàn tất giao dịch` (teal), `Đã thu xe` (teal), `Giao dịch hoàn tất` (green), `Giao dịch thất bại` (gray).
+
+---
+
+# 6. Edge Cases & Resilience
+
+1. **No row lock.** Concurrent deposit pay can race; uniqueness is `(sale_id, kind)` only. Webhook lookup by `provider_ref` has no lock.
+2. **Notary does not change status.** Remaining payout requires `checklist.notary_confirmed`, which is set internally in addition to the two request flags.
+3. **Second complete on `completed` raises `REMAINING_NOT_PAID`** because the gate is `!= remaining_paid`, not a dedicated already-complete short-circuit in `complete_instant_sale`.
+4. **Confirm pickup with no waiting schedule** still sets `ownership_pending` without writing pickup `completed` → later `PICKUP_NOT_COMPLETED` (404) from `mark_sale_complete`.
+5. **Inspection idempotent:** no waiting schedule but sale already `inspection_passed` returns 200 full detail. Existing in-progress non-`inspection_passed` returns unchanged.
+6. `confirm_notary` / complete are **not** short-circuit idempotent.
+7. Access JWT is not involved in webhook; empty secret → 503. Header must be `sha256=<hex>`.
+8. Locmem vs Redis does not apply here; bank mode stub succeeds synchronously so RN poll may see `can_confirm_pickup` immediately.
