@@ -75,4 +75,46 @@ sequenceDiagram
   Eng->>DB: completed
 ```
 
+```mermaid
+stateDiagram-v2
+  [*] --> inspection_passed: pass_inspection
+  inspection_passed --> deposit_transferring: request_payout deposit
+  deposit_transferring --> deposit_paid: bank succeeded
+  deposit_transferring --> inspection_passed: bank failed
+  deposit_paid --> ownership_pending: confirm_pickup_after_deposit
+  ownership_pending --> remaining_transferring: request_payout remaining AND notary_confirmed
+  remaining_transferring --> remaining_paid: bank succeeded
+  remaining_transferring --> ownership_pending: bank failed
+  remaining_paid --> completed: complete_instant_sale
+  inspection_passed --> failed: reject_purchase
+  deposit_paid --> failed: reject_purchase
+  ownership_pending --> failed: reject_purchase
+```
+
+Webhook `apply_payout_webhook` lookup by `provider_ref`, **no lock**. Allowed normalized values: `succeeded`, `failed`, `pending`. Invalid message: `'status must be succeeded or failed.'` (does not mention `pending`).
+
+---
+
+# 3. Detailed API Contracts
+
+Auth on purchase views: `IsAuthenticated` then `_require_ops` (`OpsUser`). Envelope on `SaleTransitionError`: `('ok': false, 'error': ('code'  '<exc.code>', 'message'  '<exc.message>'))`. HTTP = `exc.status_code`.
+
+| Method | Path | View |
+| --- | --- | --- |
+| GET | `/api/purchases/` | `PurchasesListView` |
+| GET | `/api/purchases/<uuid:bike_id>/` | `PurchasesDetailView` |
+| PATCH | `/api/purchases/<uuid:bike_id>/bank/` | `PurchaseBankView` |
+| POST | `/api/purchases/<uuid:bike_id>/inspection/pass/` | `PurchaseInspectionPassView` |
+| POST | `/api/purchases/<uuid:bike_id>/deposit/pay/` | `PurchaseDepositPayView` |
+| POST | `/api/purchases/<uuid:bike_id>/confirm-pickup/` | `PurchaseConfirmPickupView` |
+| POST | `/api/purchases/<uuid:bike_id>/notary/confirm/` | `PurchaseNotaryConfirmView` |
+| POST | `/api/purchases/<uuid:bike_id>/remaining/pay/` | `PurchaseRemainingPayView` |
+| POST | `/api/purchases/<uuid:bike_id>/complete/` | `PurchaseCompleteView` |
+| POST | `/api/purchases/<uuid:bike_id>/reject/` | `PurchaseRejectView` |
+| POST | `/api/webhooks/bank/payout/` | `BankPayoutWebhookView` |
+
+List query: `view` = `day`|`week`|`month` (invalid → `day`); `date` ISO (invalid → `local_today()`); `scope` = `queue`|`history` (invalid → `queue`); `q` searches brand/model/`masked_bike_id`/`license_plate`/`user__full_name`/`user__phone_number`; `sale_channel` kept only if in `instant_sell`|`listing`. Universe: `PricingEntry.status == 'SUBMITTED'`. Queue = waiting pickups ∪ in-progress sales. History = completed/failed ∪ pickup completed/rejected.
+
+Inspection pass body: `actual_odometer`, `inspection_notes`, `inspection_checklist` (must be object), `sale_channel` default `instant_sell`. RN sends `(odo_ok, interior_ok, exterior_ok, documents_ok)` and **no** `sale_channel`.
+
 ZZCHUNKZZ
