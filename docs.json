@@ -73,7 +73,9 @@
       },
       {
         "group": "Dealer Ecosystem",
-        "pages": []
+        "pages": [
+          "dealer-portal/auctions-get-mutates"
+        ]
       },
       {
         "group": "Systems",
@@ -111,7 +113,8 @@
           "systems/mobile-auth-sns-otp",
           "systems/ops-pickups-lifecycle",
           "systems/ops-submissions-pricing-dual-price",
-          "systems/ops-ops-auth-jwt-fcm"
+          "systems/ops-ops-auth-jwt-fcm",
+          "systems/dealer-users-cognito-otp"
         ]
       },
       {
