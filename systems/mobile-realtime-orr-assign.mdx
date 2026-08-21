@@ -6,11 +6,9 @@ description: "RN realtimeOperatorReviewService POSTs /operator-review-requests/ 
 
 # 1. Overview and Business Intent
 
-After AI evaluate, the rider waits for OPS dual price. The app opens a WebSocket, OPS writes valuation, server emits `valuation_ready`, the app **HTTP GETs** the result (the WS payload is not the report). Ownership must be a logged-in `CustomUser` before ORR create (`REQUEST_BIKE_USER_MISMATCH` if `bike.user_id` is not the JWT user). Anonymous bikes use `device_id`; `bikeAssignOwnerService` claims them.
+After AI evaluate, rider waits for OPS dual price. App opens WebSocket; OPS writes valuation; server emits `valuation_ready`; app **HTTP GETs** the result (WS payload is not the report). Bike must belong to JWT user before ORR create. Anonymous bikes use `device_id`; `bikeAssignOwnerService` claims them.
 
-**Actors:** `BikeDataAnalysis.tsx`, `realtimeOperatorReview.ts`, `bikeAssignOwner.ts`, `backend/apps/bikes/realtime_views.py`, evaluation result view.
-
-**Target files:** those plus `backend/apps/bikes/models.py` (`Bike`, `OperatorReviewRequest` TTL 15 min).
+**Actors:** BikeDataAnalysis, realtimeOperatorReview.ts, bikeAssignOwner.ts, bikes/realtime\_views.py, evaluation/realtime\_views.py.
 
 ---
 
@@ -23,32 +21,21 @@ sequenceDiagram
   participant AS as assign-owner
   participant ORR as POST /operator-review-requests/
   participant WS as WS token=IdToken
-  participant OPS as operator_channel NOTIFY
+  participant OPS as operator_channel
   participant ER as GET /evaluation/result/
 
-  Rider->>AS: ensureAssigned bike_id
-  AS->>AS: GET /auth/me user_id
-  AS->>AS: POST /bikes/assign-owner/ FOR UPDATE
+  Rider->>AS: ensureAssigned
+  AS->>AS: GET /auth/me then POST assign-owner FOR UPDATE
   Rider->>ORR: bike_id Bearer
-  ORR->>ORR: expire stale active FOR UPDATE
-  ORR->>OPS: pg_notify valuation_requested type key
-  Rider->>WS: connected then wait 120s
+  ORR->>ORR: expire stale FOR UPDATE
+  ORR->>OPS: pg_notify type valuation_requested
+  Rider->>WS: wait connected then 120s
   OPS-->>WS: valuation_ready
-  Rider->>ER: bike_id plus operator_review_request_id
-  ER-->>Rider: DeviceEventEmitter RESULT_READY
+  Rider->>ER: bike_id plus operator_review_request_id Bearer
+  ER-->>Rider: DeviceEventEmitter RESULT
 ```
 
-```mermaid
-stateDiagram-v2
-  [*] --> idle
-  idle --> running: startInternal
-  running --> done: GET result success true and data
-  running --> error: missing_id_token ws_error ws_closed ws_timeout result_not_ready
-```
-
-`start()` sets `createRequestOnConnected: false`. `ensureOperatorReviewRequestCreatedAndStart` POSTs ORR **before** WS. Duplicate inflight per bike\_id is coalesced.
-
-Token wait: 25 times 100ms for IdToken before assign. WS URL `getResolvedRealtimeWsUrl() + ?token=`.
+`start()` sets createRequestOnConnected false. ensureOperatorReviewRequestCreatedAndStart POSTs ORR before WS. Token wait 25 times 100ms for IdToken.
 
 ---
 
@@ -56,37 +43,36 @@ Token wait: 25 times 100ms for IdToken before assign. WS URL `getResolvedRealtim
 
 ### POST `/api/v1/bikes/assign-owner/`
 
-Body `bike_id`, `target_user_id` UUIDs. Client always sends **self** from GET /me. `select_for_update` on Bike.
+Body bike\_id, target\_user\_id. Client sends self from /me. select\_for\_update on Bike.
 
-- Unowned: actor must be admin or target user (self-claim).
-- Owned: actor must be current owner or admin.
-- Reassign to someone else: **admin only** (`REASSIGNMENT_FORBIDDEN`).
-- Same owner: `already_assigned`, still 200.
+- Unowned: admin or target user self-claim
+- Owned: current owner or admin
+- Reassign to someone else: admin only REASSIGNMENT\_FORBIDDEN
+- Same owner: already\_assigned 200
 
 ### POST `/api/v1/operator-review-requests/`
 
-Authenticated. Bike must belong to JWT user. Expires now plus 15 minutes. Stale active rows (`expires_at` in the past) set EXPIRED `is_active=False` inside the same transaction. Existing active returns **200 idempotent** same payload. Create 201 plus pg\_notify on `operator_channel` with JSON key `type` equal to `valuation_requested` on commit. IntegrityError races return 200 of the active row.
+Authenticated. Bike must belong to JWT user. Expires now plus 15 minutes. Stale active expired in same transaction. Existing active → 200 idempotent. Create 201 \+ pg\_notify type valuation\_requested on commit.
 
-Cancel: `POST /operator-review-requests/cancel/` body **only one of** bike\_id or operator\_review\_request\_id (FE comment).
+### Cancel POST `/operator-review-requests/cancel/`
 
-### GET `/api/v1/evaluation/result/?bike_id=&operator_review_request_id=`
+Backend enforces **exactly one of** bike\_id or operator\_review\_request\_id (AMBIGUOUS\_CANCEL\_BODY / MISSING\_CANCEL\_IDENTIFIER). May cancel COMPLETED in some paths; emits `valuation_cancelled` with key **`type`**.
 
-Used after WS `valuation_ready`. Client treats `success && data` as done; else `result_not_ready`.
+### GET `/api/v1/evaluation/result/`
 
-WS message types: `connected` (required before considering open), `valuation_ready` (may carry operator\_review\_request\_id). Other types are logged as preview 300 chars.
+**IsAuthenticated** plus ownership resolve. Query bike\_id and operator\_review\_request\_id. Used after WS valuation\_ready.
+
+WS: must see JSON type `connected` before considering open; then wait for `valuation_ready` (120000 ms).
 
 | HTTP Code | Error | Trigger |
 | --- | --- | --- |
 | 400 | INVALID\_BIKE\_ID | assign or ORR |
-| 403 | REQUEST\_BIKE\_USER\_MISMATCH | ORR bike not owned |
-| 403 | ASSIGNMENT\_FORBIDDEN | assign |
-| 403 | REASSIGNMENT\_FORBIDDEN | non-admin reassign |
+| 403 | REQUEST\_BIKE\_USER\_MISMATCH | ORR |
+| 403 | ASSIGNMENT\_FORBIDDEN / REASSIGNMENT\_FORBIDDEN | assign |
 | 404 | BIKE\_NOT\_FOUND / TARGET\_USER\_NOT\_FOUND | assign |
-| 200 | idempotent ORR | active request exists |
+| 200 | idempotent ORR | active exists |
 
-Client job errors (not HTTP): `missing_id_token`, `ws_error`, `ws_closed`, `ws_timeout_waiting_valuation_ready` (120000 ms), `result_fetch_error:STATUS`.
-
-Events: `REALTIME_OPERATOR_REVIEW_RESULT_EVENT`, `REALTIME_OPERATOR_REVIEW_ERROR_EVENT` on DeviceEventEmitter.
+Client job errors: missing\_id\_token, ws\_error, ws\_closed, ws\_timeout\_waiting\_valuation\_ready, result\_fetch\_error, result\_not\_ready.
 
 ---
 
@@ -103,31 +89,32 @@ CREATE TABLE bikes_bike (
     year INTEGER NOT NULL,
     masked_bike_id VARCHAR(120) UNIQUE
 );
-
--- OperatorReviewRequest TTL default 15 minutes. Partial unique active per bike in TMA migrations.
 ```
 
-Locks: assign `Bike.select_for_update`. ORR `OperatorReviewRequest.select_for_update` on stale and active. Pickup create (other page) has no FOR UPDATE.
+Locks: Bike.select\_for\_update on assign; OperatorReviewRequest.select\_for\_update on ORR create.
 
-NOTIFY payload key is **`type`** (`valuation_requested`). Pickup scheduled also uses `type`; pickup cancelled uses `event_type` (documented on the pickup page).
+NOTIFY keys that exist:
+
+- ORR create: `type` = valuation\_requested
+- ORR cancel: `type` = valuation\_cancelled
+- Pickup create: `type` = pickup\_scheduled
+
+**Pickup PATCH cancel does not pg\_notify.** Do not document a pickup `event_type` cancel key — it is not in code.
 
 ---
 
 # 5. Frontend and UI Logic
 
-`ensureAssigned` caches success in a Set for the process lifetime (not disk). Failed assign returns null from ensure ORR (no WS). Known request id skips POST.
+ensureAssigned caches success in a process-lifetime Set. Failed assign aborts ORR. WS IdToken in query lands in load-balancer logs. createRequestOnConnected true is deprecated/skipped.
 
-`start()` will not create ORR; comment says LoginedBackToAnalytics / dedicated flow owns creation so OPS is notified independent of AI timing.
-
-WS IdToken in query string lands in load-balancer logs.
+DeviceEventEmitter: REALTIME\_OPERATOR\_REVIEW\_RESULT\_EVENT and REALTIME\_OPERATOR\_REVIEW\_ERROR\_EVENT. Duplicate inflight per bike\_id is coalesced.
 
 ---
 
 # 6. Edge Cases and Resilience
 
-1. Assign cache Set means a bike assigned then stolen in another session still looks assigned until app restart.
-2. GET result can fail after valuation\_ready; job goes error even if OPS finished.
-3. Closing WS before finished emits `ws_closed`.
-4. `createRequestOnConnected` true is deprecated and skipped with a warn.
-5. BikeViewSet AllowAny list (pickup page) plus assign-owner is how anonymous `device_id` bikes become owned.
-6. bikes/views.py pickup/evaluate/marketplace already have a Gold Standard page; this page covers assign-owner, ORR, and Bike.device\_id.
+1. Assign cache Set survives until app restart.
+2. GET result can fail after valuation\_ready.
+3. Unowned bikes can be evaluated by anyone on AllowAny evaluate path.
+4. Cross-link bikes pickup page for AI async evaluate; this page for OPS dual price WS.
+5. Do not confuse GET /bikes/:id/evaluate/result/ (AI) with GET /evaluation/result/ (OPS).
