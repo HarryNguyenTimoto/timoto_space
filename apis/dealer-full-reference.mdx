@@ -1,0 +1,123 @@
+---
+title: "timoto-dealer-portal API Deep Technical Specification"
+sidebarTitle: "Dealer API Deep Reference"
+description: "Exhaustive technical contract, SQL locks, VietQR webhooks, and JSON schemas for all 35+ endpoints in timoto-dealer-portal"
+---
+
+# timoto-dealer-portal Complete API Technical Specification
+
+This document provides a line-by-line, zero-handwaving API reference for the **timoto-dealer-portal** backend service (`dealer.timoto.ai`).
+
+---
+
+## 1. Authentication & Zalo OAuth Subsystem (`/api/v1/auth/`)
+
+### 1.1 POST `/api/v1/auth/login/` & `/confirm-signup/`
+
+- **File Location**: `backend/users/views.py` (`LoginView`)
+- **Authentication**: `AllowAny`
+- **Request Body**:
+
+```json
+{
+  "phone_number": "0912345678",
+  "code": "654321"
+}
+```
+
+- **OTP Rule**: Hardcoded code `654321` required in production (no SMS gateway wired for dealer login).
+- **Cognito Integration**: Calls `AdminInitiateAuth` -\> returns Cognito JWT access/refresh tokens.
+
+### 1.2 GET `/api/v1/auth/zalo/login/` & `/zalo/callback/`
+
+- **File Location**: `backend/users/views.py` (`ZaloInitiateLoginView`, `ZaloCallbackView`)
+- **Execution Flow**:
+  1. `GET /zalo/login/`: Generates PKCE verifier, sets signed `zalo_pkce` cookie, redirects user to Zalo OAuth portal.
+  2. `GET /zalo/callback/?code=...`: Verifies `zalo_pkce` cookie. Exchanges code with Zalo Graph API via VN proxy or direct secret key. Provisions Cognito dealer user with `ZALO_COGNITO_PASSWORD`. Returns HTML fragment redirecting SPA to `/auth/zalo/callback?token=...`.
+
+---
+
+## 2. Auction Bidding Engine (`/api/v1/auctions/`)
+
+### 2.1 GET `/api/v1/auctions/`
+
+- **File Location**: `backend/auctions/views.py` (`AuctionViewSet.list`)
+- **Authentication**: `IsAuthenticated`
+- **Side Effect Query**: Listing expired auctions triggers inline finalization logic -\> updates status to `'ENDED'`, calculates winning bid, inserts `ending-soon` and `deposit-due` notification rows.
+
+### 2.2 POST `/api/v1/auctions/{auction_id}/place_bid/`
+
+- **File Location**: `backend/auctions/views.py` (`place_bid`)
+- **Request Body**:
+
+```json
+{
+  "amount": 45000000
+}
+```
+
+- **Validation**: `amount >= current_highest_bid + minimum_bid_increment`.
+- **Database Side Effects**: Creates `Bid` row, updates `Auction.current_price`.
+
+### 2.3 POST `/api/v1/auctions/{auction_id}/place_fast_bid/`
+
+- **File Location**: `backend/auctions/views.py` (`place_fast_bid`)
+- **Execution**: Automatically computes `bid_amount = current_price + 100,000 VND` and places bid.
+
+---
+
+## 3. Payments & VietQR Checkout Engine (`/api/v1/payments/`)
+
+### 3.1 POST `/api/token_generate` (Official VietQR Spec)
+
+- **File Location**: `backend/payments/views.py` (`vietqr_token_generate`)
+- **Authentication**: `AllowAny` (Uses Basic Auth header with VietQR client credentials).
+- **200 OK Response**:
+
+```json
+{
+  "access_token": "vietqr_access_token_xyz123",
+  "token_type": "Bearer",
+  "expires_in": 86400
+}
+```
+
+### 3.2 POST `/bank/api/transaction-sync` (VietQR Callback Webhook)
+
+- **File Location**: `backend/payments/views.py` (`vietqr_callback`)
+- **Authentication**: `Bearer <vietqr_access_token>`
+- **Request Body**:
+
+```json
+{
+  "transaction_id": "TXN_99887766",
+  "order_id": "AUC_DEPOSIT_3fa85f64",
+  "amount": 4500000,
+  "transfer_content": "AUC DEPOSIT 3fa85f64",
+  "status": "SUCCESS"
+}
+```
+
+- **Execution & Lock Logic**:
+  - Parses `order_id` recipe (`AUC_DEPOSIT_<id>` vs `AUC_FULL_<id>` vs `DEALER_ORDER_<id>`).
+  - Executes `Checkout.objects.select_for_update()`.
+  - Marks payment status = `'PAID'`.
+  - Triggers HTTP POST to `paid_hook_url` (must match allowlist).
+  - Reserves combo inventory rows.
+- **200 OK Response**:
+
+```json
+{
+  "error": 0,
+  "message": "Transaction synced successfully",
+  "data": {
+    "order_id": "AUC_DEPOSIT_3fa85f64",
+    "status": "PAID"
+  }
+}
+```
+
+### 3.3 GET `/api/v1/payments/deposit/confirmation/{auction_id}/pdf/`
+
+- **File Location**: `backend/payments/views.py` (`deposit_confirmation_pdf`)
+- **Execution**: Generates binary PDF receipt for 10% deposit payment using ReportLab.
