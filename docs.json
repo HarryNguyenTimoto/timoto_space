@@ -43,7 +43,8 @@
           "internal-app/pickups-lifecycle",
           "internal-app/notary-contract-signing",
           "internal-app/instant-sell-engine",
-          "internal-app/submissions-pricing-dual-price"
+          "internal-app/submissions-pricing-dual-price",
+          "internal-app/bank-verification"
         ]
       },
       {
@@ -66,7 +67,8 @@
           "mobile/app-architecture-navigation",
           "mobile/sell-flow-customer",
           "mobile/bikes-pickup-evaluate-marketplace",
-          "mobile/s2s-operator-offer-buyer-found"
+          "mobile/s2s-operator-offer-buyer-found",
+          "mobile/auth-zalo-apple"
         ]
       },
       {
