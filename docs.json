@@ -88,7 +88,8 @@
           "systems/mobile-auth-zalo-apple",
           "systems/mobile-auth-sns-otp",
           "systems/ops-pickups-lifecycle",
-          "systems/ops-submissions-pricing-dual-price"
+          "systems/ops-submissions-pricing-dual-price",
+          "systems/ops-ops-auth-jwt-fcm"
         ]
       },
       {
