@@ -64,7 +64,8 @@
           "systems/six-repos-map",
           "systems/screen-api-registry",
           "systems/ai-web-waitlist-lambda",
-          "systems/dealer-auctions-get-mutates"
+          "systems/dealer-auctions-get-mutates",
+          "systems/dealer-auth-zalo-oauth"
         ]
       },
       {
