@@ -160,7 +160,10 @@
           "apis/postman-internal",
           "apis/mobile-verify-otp",
           "apis/ops-submit-pricing",
-          "apis/exhaustive-api-matrix"
+          "apis/exhaustive-api-matrix",
+          "apis/mobile-full-reference",
+          "apis/internal-full-reference",
+          "apis/dealer-full-reference"
         ]
       },
       {

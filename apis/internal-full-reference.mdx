@@ -1,0 +1,221 @@
+---
+title: "timoto-internal-app API Deep Technical Specification"
+sidebarTitle: "Internal Ops API Deep Reference"
+description: "Exhaustive technical contract, database side-effects, state transitions, and JSON schemas for all 42+ endpoints in timoto-internal-app"
+---
+
+# timoto-internal-app Complete API Technical Specification
+
+This document provides a line-by-line, zero-handwaving API reference for the **timoto-internal-app** (OPS Portal) backend service.
+
+---
+
+## 1. Auth & Admin Subsystem (`/api/auth/` & `/api/admin/`)
+
+### 1.1 POST `/api/auth/login/`
+
+- **File Location**: `backend/ops_auth/views.py` (`JwtLoginView`)
+- **Authentication**: `AllowAny`
+- **Request Body**:
+
+```json
+{
+  "username": "ops_operator",
+  "password": "Password123!"
+}
+```
+
+- **Execution**: Validates `OpsUser` credentials, issues SimpleJWT access token (expiry 8h) and refresh token (expiry 7 days).
+- **200 OK Response**:
+
+```json
+{
+  "access": "eyJhbGciOi...",
+  "refresh": "eyJhbGciOi...",
+  "user": {
+    "id": "c1f2e3d4-5678-90ab-cdef-1234567890ab",
+    "username": "ops_operator",
+    "email": "ops@timoto.ai",
+    "role": "OPS"
+  }
+}
+```
+
+### 1.2 GET `/api/admin/staff/` & POST `/api/admin/staff/`
+
+- **File Location**: `backend/ops_auth/admin_api.py`
+- **Permissions**: `IsAuthenticated` AND `IsOpsAdmin` (role = `'ADMIN'`).
+- **POST Request Body**: `{"username": "new_ops", "email": "staff@timoto.ai", "password": "...", "role": "OPS"}`.
+
+---
+
+## 2. Submissions & Dual-Price Engine Subsystem (`/api/submissions/`)
+
+### 2.1 GET `/api/submissions/`
+
+- **File Location**: `backend/bikes/submissions_api.py` (`SubmissionsListView`)
+- **Permissions**: `IsAuthenticated` (Role OPS or ADMIN)
+- **Query Params**: `?status=pending_valuation&search=Honda&page=1`
+- **200 OK Response**:
+
+```json
+{
+  "count": 12,
+  "results": [
+    {
+      "bike_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "brand": "Honda",
+      "model": "SH 150i",
+      "year": 2021,
+      "status": "pending_valuation",
+      "expected_price": 75000000,
+      "created_at": "2026-08-21T09:00:00Z"
+    }
+  ]
+}
+```
+
+### 2.2 PUT/POST `/api/submissions/{bike_id}/pricing/`
+
+- **File Location**: `backend/bikes/submissions_api.py` (`SubmissionPricingView`)
+- **Request Body (Draft or Final Input)**:
+
+```json
+{
+  "offer_to_user": 72000000,
+  "engine_evaluation_notes": "Động cơ êm, chưa rớt đầu",
+  "exterior_score": 8.5,
+  "engine_score": 9.0
+}
+```
+
+- **PUT**: Saves draft pricing entries without committing state transition.
+- **POST**: Prepares pricing calculation using `tipp_pricing.py`.
+
+### 2.3 POST `/api/submissions/{bike_id}/submit/`
+
+- **File Location**: `backend/bikes/submissions_api.py` (`SubmissionSubmitView`)
+- **Database Side Effects**:
+  - Computes `instant_price_vnd` and `listing_price_vnd` using dual-price rules.
+  - Snapshots pricing rates in `bike_sale_records`.
+  - Sets pricing status = `'SUBMITTED'`.
+  - Triggers HMAC Webhook to rider app: `POST /api/v1/internal/listings/{bike_id}/buyer-found/` or S2S operator offer read.
+  - Updates `SlaTracker.valuation_completed_at = now()`.
+- **200 OK Response**:
+
+```json
+{
+  "status": "ok",
+  "message": "Valuation submitted successfully.",
+  "instant_price_vnd": 72000000,
+  "listing_price_vnd": 78000000
+}
+```
+
+---
+
+## 3. Pickup Queue & Inspection Subsystem (`/api/pickups/`)
+
+### 3.1 GET `/api/pickups/`
+
+- **File Location**: `backend/bikes/pickups_api.py` (`PickupsListView`)
+- **Query Params**: `?status=waiting_scheduled`
+- **Filters**: Reads bikes with active pickup schedules where pricing status = `'SUBMITTED'`.
+
+### 3.2 POST `/api/pickups/{bike_id}/inspection/`
+
+- **File Location**: `backend/bikes/pickups_api.py` (`PickupInspectionView`)
+- **Request Body**:
+
+```json
+{
+  "chassis_number_match": true,
+  "engine_number_match": true,
+  "license_plate_match": true,
+  "actual_condition_rating": 8.5,
+  "inspection_notes": "Khung sườn nguyên bản, cavet gốc trùng khớp"
+}
+```
+
+### 3.3 POST `/api/pickups/{bike_id}/picked-up/`
+
+- **File Location**: `backend/bikes/pickups_api.py` (`PickupPickedUpView`)
+- **Database Side Effects**:
+  - Updates `bikes_pickupschedule.status = 'COMPLETED'`.
+  - Writes `USER_DB_WRITE` log entry.
+  - Transitions `bike_sale_records.status = 'inspection_passed'`.
+- **200 OK Response**:
+
+```json
+{
+  "status": "ok",
+  "message": "Bike marked as picked up. Instant sell purchase record created."
+}
+```
+
+---
+
+## 4. Purchases, Bank & 50/50 Payout Engine Subsystem (`/api/purchases/`)
+
+### 4.1 PATCH `/api/purchases/{bike_id}/bank/`
+
+- **File Location**: `backend/bikes/purchases_api.py` (`PurchaseBankView`)
+- **Request Body**:
+
+```json
+{
+  "bank_code": "VCB",
+  "account_number": "0071001234567",
+  "account_holder_name": "NGUYEN VAN A"
+}
+```
+
+- **Database Side Effects**: Stores verified seller bank details in `bike_sale_records`. Sets `status = 'deposit_pending'`.
+
+### 4.2 POST `/api/purchases/{bike_id}/payouts/deposit/` (50% Leg 1)
+
+- **File Location**: `backend/bikes/purchases_api.py` (`PurchaseDepositPayView`)
+- **Execution & Rail Logic**:
+  - Invokes payout engine `instant_sell.py` (`split_purchase_amounts`).
+  - Computes `deposit_amount = instant_price_vnd * 0.50`.
+  - Dispatches HTTP payload to Bank Payout Gateway or `async_stub`.
+- **200 OK Response**:
+
+```json
+{
+  "status": "ok",
+  "payout_id": "payout_dep_98765",
+  "amount": 36000000,
+  "payout_kind": "deposit",
+  "payout_status": "processing"
+}
+```
+
+### 4.3 POST `/api/purchases/{bike_id}/notary/confirm/`
+
+- **File Location**: `backend/bikes/purchases_api.py` (`PurchaseNotaryConfirmView`)
+- **Request Body**: `{"contract_number": "HD-2026/08/8899", "notarized_at": "2026-08-21T14:00:00Z"}`
+- **Database Side Effects**: Sets `notary_signed = true`, transitions `status = 'remaining_payout_pending'`.
+
+### 4.4 POST `/api/purchases/{bike_id}/payouts/remaining/` (50% Leg 2)
+
+- **File Location**: `backend/bikes/purchases_api.py` (`PurchaseRemainingPayView`)
+- **Execution**: Dispatches remaining 50% payout (`36,000,000 VND`). Upon HMAC callback confirmation from Bank Gateway (`POST /api/webhooks/bank/payout/`), transitions `status = 'completed'`.
+
+---
+
+## 5. Webhooks & Inbound Integration Subsystem (`/api/webhooks/`)
+
+### 5.1 POST `/api/webhooks/tma/new-submission/`
+
+- **File Location**: `backend/bikes/tma_webhook.py` (`TmaNewSubmissionWebhookView`)
+- **Authentication**: `X-Timoto-Signature` (SHA256 HMAC)
+- **Request Body**: `{"bike_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"}`
+- **Execution**: Creates `SlaTracker` (2-hour valuation target) and pushes `NEW_SUBMISSION` internal notification to FCM topic.
+
+### 5.2 POST `/api/webhooks/bank/payout/`
+
+- **File Location**: `backend/bikes/purchases_api.py` (`BankPayoutWebhookView`)
+- **Authentication**: Bank HMAC Signature header.
+- **Request Body**: `{"payout_id": "payout_dep_98765", "status": "SUCCESS", "transaction_ref": "FT2623388991"}`
+- **Execution**: Updates `BikeSalePayout` row to `SUCCESS`. Advances instant sell state machine.
