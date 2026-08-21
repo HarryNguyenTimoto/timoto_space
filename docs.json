@@ -76,7 +76,9 @@
         "pages": [
           "dealer-portal/auctions-get-mutates",
           "dealer-portal/catalog-checkout-vietqr",
-          "dealer-portal/auth-zalo-oauth"
+          "dealer-portal/auth-zalo-oauth",
+          "dealer-portal/notifications-onesignal",
+          "dealer-portal/evaluations-ai-report-scd"
         ]
       },
       {
