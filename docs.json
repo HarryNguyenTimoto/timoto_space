@@ -37,7 +37,9 @@
     "groups": [
       {
         "group": "Operations & Internal App",
-        "pages": []
+        "pages": [
+          "internal-app/tma-db-mirrors"
+        ]
       },
       {
         "group": "Architecture",
@@ -49,7 +51,9 @@
       },
       {
         "group": "Mobile Client",
-        "pages": []
+        "pages": [
+          "mobile/analytics-airbridge"
+        ]
       },
       {
         "group": "Scraping & Data Pipeline",
