@@ -52,7 +52,9 @@
       {
         "group": "Mobile Client",
         "pages": [
-          "mobile/analytics-airbridge"
+          "mobile/analytics-airbridge",
+          "mobile/feedback",
+          "mobile/options-fmp"
         ]
       },
       {
