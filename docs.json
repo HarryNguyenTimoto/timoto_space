@@ -57,7 +57,8 @@
           "mobile/feedback",
           "mobile/options-fmp",
           "mobile/evaluation-upload",
-          "mobile/realtime-orr-assign-owner"
+          "mobile/realtime-orr-assign-owner",
+          "mobile/ocr-cavet"
         ]
       },
       {
