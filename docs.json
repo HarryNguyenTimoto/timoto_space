@@ -67,7 +67,8 @@
       {
         "group": "Scraping & Data Pipeline",
         "pages": [
-          "scraper/chotot-pipeline-constants"
+          "scraper/chotot-pipeline-constants",
+          "scraper/image-sync-s3"
         ]
       },
       {
