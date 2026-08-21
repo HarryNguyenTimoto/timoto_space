@@ -81,7 +81,8 @@
           "dealer-portal/evaluations-ai-report-scd",
           "dealer-portal/orders-dealer-lifecycle",
           "dealer-portal/spa-user-cache-reminders",
-          "dealer-portal/users-cognito-otp"
+          "dealer-portal/users-cognito-otp",
+          "dealer-portal/orders-auctions-users-models"
         ]
       },
       {
