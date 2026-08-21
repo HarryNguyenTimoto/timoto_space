@@ -101,11 +101,9 @@
       {
         "group": "Features & Tickets",
         "pages": [
-          "features/zalo-login",
-          "features/cavet-ocr",
-          "features/dual-price-listing",
           "features/pickup-reschedule",
-          "features/instant-sell-purchases"
+          "features/instant-sell-purchases",
+          "features/dual-price-engine"
         ]
       },
       {
@@ -139,11 +137,11 @@
       {
         "group": "End-to-End Flows",
         "pages": [
-          "flows/sell-to-pickup",
           "flows/rider-sell-images",
           "flows/rider-buy",
           "flows/ops-web-and-app",
-          "flows/dealer-hub"
+          "flows/sell-to-instant-payout",
+          "flows/dealer-auction-vietqr"
         ]
       },
       {
