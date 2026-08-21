@@ -76,7 +76,11 @@
           "systems/dealer-evaluations-ai-report-scd",
           "systems/mobile-options-fmp",
           "systems/scraper-chotot-pipeline-constants",
-          "systems/dealer-orders-auctions-users-models"
+          "systems/dealer-orders-auctions-users-models",
+          "systems/dealer-orders-dealer-lifecycle",
+          "systems/mobile-s2s-operator-offer-buyer-found",
+          "systems/mobile-realtime-orr-assign-owner",
+          "systems/dealer-spa-user-cache-reminders"
         ]
       },
       {
