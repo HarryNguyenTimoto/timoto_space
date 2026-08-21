@@ -86,7 +86,9 @@
           "systems/ops-tma-db-mirrors",
           "systems/ops-tma-webhook-new-submission",
           "systems/mobile-auth-zalo-apple",
-          "systems/mobile-auth-sns-otp"
+          "systems/mobile-auth-sns-otp",
+          "systems/ops-pickups-lifecycle",
+          "systems/ops-submissions-pricing-dual-price"
         ]
       },
       {
