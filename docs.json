@@ -36,7 +36,22 @@
     },
     "groups": [
       {
-        "group": "Operations & Internal App",
+        "group": "Architecture & Systems",
+        "pages": [
+          "systems/six-repos-map",
+          "systems/screen-api-registry",
+          "architecture/big-picture",
+          "architecture/data-ai-infra",
+          "architecture/what-to-build",
+          "systems/timoto-mobile",
+          "systems/dealer-portal",
+          "systems/timoto-internal-app",
+          "systems/timoto-ai-web",
+          "systems/chototcaodulieu"
+        ]
+      },
+      {
+        "group": "Internal Ops App (timoto-internal-app)",
         "pages": [
           "internal-app/tma-db-mirrors",
           "internal-app/tma-webhook-new-submission",
@@ -50,15 +65,7 @@
         ]
       },
       {
-        "group": "Architecture",
-        "pages": [
-          "architecture/big-picture",
-          "architecture/data-ai-infra",
-          "architecture/what-to-build"
-        ]
-      },
-      {
-        "group": "Mobile Client",
+        "group": "Mobile App (timoto-mobile)",
         "pages": [
           "mobile/analytics-airbridge",
           "mobile/feedback",
@@ -76,7 +83,7 @@
         ]
       },
       {
-        "group": "Scraping & Data Pipeline",
+        "group": "Scraper & Data Pipeline (chototcaodulieu)",
         "pages": [
           "scraper/chotot-pipeline-constants",
           "scraper/image-sync-s3",
@@ -85,14 +92,14 @@
         ]
       },
       {
-        "group": "AI Web & Waitlist",
+        "group": "AI Web Landing (TiMoto-AI-Web)",
         "pages": [
           "ai-web/waitlist-lambda",
           "ai-web/landing-static-deploy"
         ]
       },
       {
-        "group": "Features",
+        "group": "Features & Tickets",
         "pages": [
           "features/zalo-login",
           "features/cavet-ocr",
@@ -119,18 +126,6 @@
         ]
       },
       {
-        "group": "Systems",
-        "pages": [
-          "systems/timoto-mobile",
-          "systems/dealer-portal",
-          "systems/timoto-internal-app",
-          "systems/timoto-ai-web",
-          "systems/chototcaodulieu",
-          "systems/six-repos-map",
-          "systems/screen-api-registry"
-        ]
-      },
-      {
         "group": "Product",
         "pages": [
           "product/ticket-index",
@@ -142,7 +137,7 @@
         ]
       },
       {
-        "group": "Flows",
+        "group": "End-to-End Flows",
         "pages": [
           "flows/sell-to-pickup",
           "flows/rider-sell-images",
@@ -152,7 +147,7 @@
         ]
       },
       {
-        "group": "APIs",
+        "group": "APIs & Postman",
         "pages": [
           "apis/overview",
           "apis/mobile",
