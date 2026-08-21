@@ -61,14 +61,16 @@
           "mobile/ocr-cavet",
           "mobile/app-architecture-navigation",
           "mobile/sell-flow-customer",
-          "mobile/bikes-pickup-evaluate-marketplace"
+          "mobile/bikes-pickup-evaluate-marketplace",
+          "mobile/s2s-operator-offer-buyer-found"
         ]
       },
       {
         "group": "Scraping & Data Pipeline",
         "pages": [
           "scraper/chotot-pipeline-constants",
-          "scraper/image-sync-s3"
+          "scraper/image-sync-s3",
+          "scraper/proxy-rotation-anti-bot"
         ]
       },
       {
