@@ -44,7 +44,8 @@
           "internal-app/notary-contract-signing",
           "internal-app/instant-sell-engine",
           "internal-app/submissions-pricing-dual-price",
-          "internal-app/bank-verification"
+          "internal-app/bank-verification",
+          "internal-app/role-permissions-matrix"
         ]
       },
       {
