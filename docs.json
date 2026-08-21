@@ -57,7 +57,9 @@
       },
       {
         "group": "AI Web & Waitlist",
-        "pages": []
+        "pages": [
+          "ai-web/waitlist-lambda"
+        ]
       },
       {
         "group": "Features",
