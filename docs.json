@@ -39,7 +39,9 @@
         "group": "Operations & Internal App",
         "pages": [
           "internal-app/tma-db-mirrors",
-          "internal-app/tma-webhook-new-submission"
+          "internal-app/tma-webhook-new-submission",
+          "internal-app/pickups-lifecycle",
+          "internal-app/notary-contract-signing"
         ]
       },
       {
