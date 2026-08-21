@@ -42,7 +42,8 @@
           "internal-app/tma-webhook-new-submission",
           "internal-app/pickups-lifecycle",
           "internal-app/notary-contract-signing",
-          "internal-app/instant-sell-engine"
+          "internal-app/instant-sell-engine",
+          "internal-app/submissions-pricing-dual-price"
         ]
       },
       {
