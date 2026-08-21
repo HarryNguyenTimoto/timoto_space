@@ -82,7 +82,8 @@
           "systems/mobile-realtime-orr-assign-owner",
           "systems/dealer-spa-user-cache-reminders",
           "systems/scraper-image-sync-s3",
-          "systems/mobile-analytics-airbridge"
+          "systems/mobile-analytics-airbridge",
+          "systems/ops-tma-db-mirrors"
         ]
       },
       {
