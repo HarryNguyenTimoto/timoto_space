@@ -56,7 +56,8 @@
           "mobile/analytics-airbridge",
           "mobile/feedback",
           "mobile/options-fmp",
-          "mobile/evaluation-upload"
+          "mobile/evaluation-upload",
+          "mobile/realtime-orr-assign-owner"
         ]
       },
       {
