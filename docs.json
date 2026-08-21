@@ -114,7 +114,8 @@
           "dealer-portal/users-cognito-otp",
           "dealer-portal/orders-auctions-users-models",
           "dealer-portal/inventory-catalog-sync",
-          "dealer-portal/migration-v1-to-v2"
+          "dealer-portal/migration-v1-to-v2",
+          "dealer-portal/escrow-deposit-flow"
         ]
       },
       {
