@@ -79,7 +79,9 @@
           "dealer-portal/auth-zalo-oauth",
           "dealer-portal/notifications-onesignal",
           "dealer-portal/evaluations-ai-report-scd",
-          "dealer-portal/orders-dealer-lifecycle"
+          "dealer-portal/orders-dealer-lifecycle",
+          "dealer-portal/spa-user-cache-reminders",
+          "dealer-portal/users-cognito-otp"
         ]
       },
       {
