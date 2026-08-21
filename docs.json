@@ -38,7 +38,8 @@
       {
         "group": "Operations & Internal App",
         "pages": [
-          "internal-app/tma-db-mirrors"
+          "internal-app/tma-db-mirrors",
+          "internal-app/tma-webhook-new-submission"
         ]
       },
       {
@@ -54,7 +55,8 @@
         "pages": [
           "mobile/analytics-airbridge",
           "mobile/feedback",
-          "mobile/options-fmp"
+          "mobile/options-fmp",
+          "mobile/evaluation-upload"
         ]
       },
       {
