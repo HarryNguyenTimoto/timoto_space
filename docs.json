@@ -139,7 +139,8 @@
           "flows/rider-sell-images",
           "flows/rider-buy",
           "flows/ops-web-and-app",
-          "flows/sell-to-instant-payout"
+          "flows/sell-to-instant-payout",
+          "flows/dealer-auction-vietqr"
         ]
       },
       {

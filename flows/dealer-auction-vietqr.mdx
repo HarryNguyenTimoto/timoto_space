@@ -1,0 +1,76 @@
+---
+title: "End-to-End Flow: Dealer Auction Bidding to VietQR Checkout"
+sidebarTitle: "Dealer Auction to VietQR"
+description: "Dealer Auction to VietQR flow"
+---
+
+# 1. Overview
+
+This document traces the complete lifecycle of a **Dealer Auction Purchase** across the Dealer Portal ecosystem. It connects the React SPA (`timoto_dealer_portal_v2`), the Django backend (`timoto-dealer-portal`), NLB/Nginx load balancing, and VietQR payment gateway webhooks.
+
+# 2. Sequence Diagram
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Dealer as Dealer User
+  participant SPA as Dealer SPA (v2 React)
+  participant BE as Dealer BE (Django)
+  participant DB as Postgres (Fargate)
+  participant QR as VietQR / PayOS Gateway
+
+  Dealer->>SPA: View Auction List & Click "Quick Bid (+100k)"
+  SPA->>BE: POST /api/v1/auctions/:id/bid/ (amount=current + 100,000)
+  BE->>DB: INSERT Into AuctionBid & Update Auction.current_price
+  BE-->>SPA: 200 OK (New highest bidder)
+
+  Note over BE,DB: Auction Timer Expires -> Next GET /api/v1/auctions/ triggers lazy finalization
+  BE->>DB: Update status='ended', winner=Dealer, deposit_due_at=NOW() + 24h
+
+  Dealer->>SPA: Select Won Auction & Click "Pay Deposit"
+  SPA->>BE: POST /api/v1/payments/checkout/ (type='auction_deposit', auction_id=id)
+  BE->>BE: Generate VietQR Payload & order_id recipe
+  BE-->>SPA: 200 OK { qr_code_url, order_id, amount }
+
+  Dealer->>QR: Scan QR in Mobile Banking App & Transfer
+  QR->>BE: POST /api/v1/payments/vietqr/callback/ (order_id, amount)
+  BE->>DB: Verify order_id recipe, mark Auction.deposit_paid=True
+  BE->>DB: Create DealerOrder(status='deposit_paid')
+
+  Dealer->>SPA: Pay Remainder (90%) within 7 Days
+  SPA->>BE: POST /api/v1/payments/checkout/ (type='auction_remainder', order_id=id)
+  BE-->>SPA: 200 OK { qr_code_url, order_id, amount }
+
+  QR->>BE: POST /api/v1/payments/vietqr/callback/ (remainder order_id)
+  BE->>DB: Update DealerOrder(status='paid', delivery_status='processing')
+  BE->>DB: Reserve Combo Inventory (combo_inventory.py)
+```
+
+# 3. Step-by-Step Code Tracing
+
+### Step 1: Bidding (timoto-dealer-portal)
+
+- **SPA Component**: `src/pages/AuctionsPage.tsx`
+- **BE View**: `AuctionsViewSet.place_bid` (`backend/catalog/views.py`)
+- **Rules**: Bid increment must be \>= 100,000 VND. No `select_for_update` on bid insert (optimistic update).
+
+### Step 2: Auction Finalization (Lazy Execution)
+
+- **BE Hook**: `AuctionsViewSet.list` (`backend/catalog/views.py`)
+- **Logic**: When any dealer fetches the auctions list, the backend checks for `end_time <= NOW()` and `status == 'active'`. It updates `status = 'ended'` and calculates winner as highest bidder.
+
+### Step 3: 10% Deposit VietQR Checkout
+
+- **BE View**: `CheckoutViewSet.create` (`backend/payments/checkout_views.py`)
+- **Shared Contract**: Generates `order_id` string formatted as `AUC-DEP-{auction_id}-{timestamp_hash}`.
+- **Callback Handling**: `VietQRCallbackView` (`backend/payments/views.py`) parses `order_id`, verifies exact transfer amount, and updates `deposit_paid = True`.
+
+### Step 4: 90% Remainder & Inventory Sync
+
+- **BE Service**: `backend/orders/combo_inventory.py`
+- **Sync Logic**: Upon full payment callback confirmation, reserves the associated bike combo and triggers cross-channel unavailable notification to `timoto-mobile`.
+
+# 4. Critical Edge Cases & Contracts
+
+- **No Escrow Model**: The system does NOT hold funds in a third-party escrow account. Payments go directly to VietQR target accounts.
+- **Deposit Expiry**: If 10% deposit is not paid within 24 hours of auction end, winner status fails over to second-highest bidder.
