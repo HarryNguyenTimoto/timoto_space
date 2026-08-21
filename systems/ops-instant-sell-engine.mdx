@@ -117,4 +117,40 @@ List query: `view` = `day`|`week`|`month` (invalid → `day`); `date` ISO (inval
 
 Inspection pass body: `actual_odometer`, `inspection_notes`, `inspection_checklist` (must be object), `sale_channel` default `instant_sell`. RN sends `(odo_ok, interior_ok, exterior_ok, documents_ok)` and **no** `sale_channel`.
 
+Webhook: `AllowAny`, `authentication_classes = []`, `csrf_exempt`. Header `HTTP_X_TIMOTO_SIGNATURE` = `sha256=` \+ hex HMAC-SHA256 of **raw body**. Secret: `BANK_PAYOUT_WEBHOOK_SECRET` or `TMA_WEBHOOK_SECRET` or `WEBHOOK_HMAC_SECRET`. Body `(provider_ref, status, error_message?)`.
+
+`sale_actions` gates (exact):
+
+- `can_pay_deposit` / `deposit_cta_enabled`: status `== inspection_passed` **and** `has_bank_info`
+- `bank_info_missing`: `inspection_passed` and not bank
+- `can_confirm_pickup`: `deposit_paid`
+- `can_confirm_notary`: `ownership_pending` and not `checklist.notary_confirmed`
+- `can_pay_remaining`: `ownership_pending` and `notary_confirmed` and bank
+- `can_complete_sale`: `remaining_paid`
+- `can_reject`: status in `IN_PROGRESS_STATUSES`
+- `escalate_to_henry`: deposit or remaining payout `== failed`
+
+| HTTP Code | Error Code | Trigger |
+| --- | --- | --- |
+| 422 | `CONFIRMATIONS_REQUIRED` | flags not JSON `true` (`is True`) |
+| 404 | `SALE_NOT_STARTED` | pass inspection first / sale not found |
+| 409 | `SALE_TERMINAL` | already closed |
+| 422 | `BANK_INFO_MISSING` | payout without bank |
+| 409 | `NOTARY_NOT_CONFIRMED` | remaining payout before notary |
+| 409 | `SALE_WRONG_STATE` | cannot pay kind from current status |
+| 409 | `DEPOSIT_NOT_PAID` | confirm pickup too early |
+| 409 | `REMAINING_NOT_PAID` | complete too early |
+| 422 | `INVALID_REASON` | reject reason shorter than 5 chars |
+| 404 | `PICKUP_NOT_WAITING` | no waiting pickup and sale not already inspection\_passed |
+| 401 | `Invalid signature` | webhook HMAC mismatch |
+| 503 | `Webhook not configured` | empty webhook secret |
+
+Price resolution: listing → `listing_price_vnd` then `offer_to_user`; instant → `instant_price_vnd` then `offer_to_user`; fallback `schedule.valuation_price`. `split_purchase_amounts` raises `ValueError('purchase price must be positive')` if `total_vnd <= 0` — **not** wrapped as `SaleTransitionError`.
+
+---
+
+# 4. Database Schema & State Transitions
+
+**No `SELECT FOR UPDATE`** in `instant_sell.py`, `purchases_api.py`, `payouts.py`, or `sale.py`. Idempotency for payouts is `UniqueConstraint(fields=['sale', 'kind'], name='uniq_bike_sale_payout_kind')` plus key `f'(record.id)::kind'`.
+
 ZZCHUNKZZ
