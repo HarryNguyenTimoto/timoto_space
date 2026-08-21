@@ -45,7 +45,8 @@
           "internal-app/instant-sell-engine",
           "internal-app/submissions-pricing-dual-price",
           "internal-app/bank-verification",
-          "internal-app/role-permissions-matrix"
+          "internal-app/role-permissions-matrix",
+          "internal-app/deposit-payout-engine"
         ]
       },
       {
