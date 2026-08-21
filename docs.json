@@ -74,7 +74,9 @@
       {
         "group": "Dealer Ecosystem",
         "pages": [
-          "dealer-portal/auctions-get-mutates"
+          "dealer-portal/auctions-get-mutates",
+          "dealer-portal/catalog-checkout-vietqr",
+          "dealer-portal/auth-zalo-oauth"
         ]
       },
       {
