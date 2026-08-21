@@ -63,7 +63,8 @@
           "systems/chototcaodulieu",
           "systems/six-repos-map",
           "systems/screen-api-registry",
-          "systems/ai-web-waitlist-lambda"
+          "systems/ai-web-waitlist-lambda",
+          "systems/dealer-auctions-get-mutates"
         ]
       },
       {
