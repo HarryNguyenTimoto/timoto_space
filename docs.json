@@ -58,12 +58,15 @@
           "mobile/options-fmp",
           "mobile/evaluation-upload",
           "mobile/realtime-orr-assign-owner",
-          "mobile/ocr-cavet"
+          "mobile/ocr-cavet",
+          "mobile/app-architecture-navigation"
         ]
       },
       {
         "group": "Scraping & Data Pipeline",
-        "pages": []
+        "pages": [
+          "scraper/chotot-pipeline-constants"
+        ]
       },
       {
         "group": "AI Web & Waitlist",
