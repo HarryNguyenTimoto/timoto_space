@@ -14,6 +14,7 @@ description: "Rider app Apps/ + Django api.timoto.ai"
 - Django urls: `backend/config/urls.py` \+ `backend/apps/*/urls.py`
 - Postman (101 requests): `backend/postman/Timoto_API.postman_collection.json`
 - Local tests: `python manage.py test --settings=config.settings_test`
+- Test runner: `./backend/test-runner.sh backend-unit` (or target: `mkt-filters`, `buy-flow`, `prod-api`, `staging-api`, `realtime-ws`, `eval-flow`)
 
 ## Frontend ↔ backend
 
@@ -27,11 +28,23 @@ App uses REST to `API_BASE` (`https://api-staging.timoto.ai` / `https://api.timo
 
 ## Gaps vs app code
 
-`marketplaceBuyService.ts` calls `/marketplace/purchase-orders/` and `/marketplace/payments/` — **no matching `urls.py`**. Treat as WIP. Do not document as live.
+`marketplaceBuyService.ts` calls `/marketplace/purchase-orders/` and `/marketplace/payments/` — **no matching `urls.py`**. Treat as WIP. Do not document as live. Contract tests in `test_purchase_orders_api.py` are explicitly skipped.
 
-## Tests
+## Tests & Coverage (292 Unit Tests, 100% PASS)
 
-~234 Django tests, not fail-hard in CI until `backend-ci.yml` is fixed. Jest in `Apps/` not in CI. See testing plan §8.
+The Django backend test suite uses isolated in-memory SQLite (`config.settings_test`).
+
+- **Total Unit Tests**: 292 targeted tests across 30 test files (297 total DB discoverable tests).
+- **`apps/users`** (55 tests): OTP login, profile `GET/PUT/PATCH /auth/me/`, native Zalo PKCE & proxy fallback, Apple sign-in, account soft-delete & reactivation, FCM push tokens.
+- **`apps/bikes`** (141 tests): Pickup schedule creation & patch, marketplace listings & filters, sale history processing/completed tabs, operator review cancellation, realtime valuation rejection.
+- **`apps/evaluation`** (49 tests): HMAC SHA-256 signatures, AI evaluation pipeline (`output_jsons`), TIPP dual-pricing, buyback resolution, seller listing status.
+- **`apps/feedback`, `apps/ocr`, `apps/options`** (33 tests): User feedback, cavet OCR parsing, FMP price range estimation.
+
+### Execution
+
+```bash
+./backend/test-runner.sh backend-unit
+```
 
 ## Do not
 
