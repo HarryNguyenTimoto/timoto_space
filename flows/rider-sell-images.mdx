@@ -136,13 +136,13 @@ Home / Bán xe CTA → `runValuationEntryFlow()`. If outside 06:00–23:00 → `
 
 ### Step 01 cavet / form
 
-| Screen | User sees | Images | API | Next |
-| --- | --- | --- | --- | --- |
-| SelectRegisterOption | Điền thủ công / Scan giấy tờ xe | none | — | RegisterInput or ScanBikeCer |
-| ScanBikeCer | Camera frame cà vẹt | **Camera** vision-camera 1280×960 | on-device `runCavetOcr` then optional `POST /ocr/vehicle-registration/` multipart `image` | OcrConfirmResult |
-| OcrConfirmResult | Editable cavet \+ warranty | preview | — | replace RegisterInput |
+| Screen | User sees | Images | API | Next |  |  |
+| --- | --- | --- | --- | --- | --- | --- |
+| SelectRegisterOption | Điền thủ công / Scan giấy tờ xe | none | — | RegisterInput or ScanBikeCer |  |  |
+| ScanBikeCer | Camera frame cà vẹt | **Camera** vision-camera 1280×960 | on-device `runCavetOcr` then optional `POST /ocr/vehicle-registration/` multipart `image` | OcrConfirmResult |  |  |
+| OcrConfirmResult | Editable cavet \+ warranty | preview | — | replace RegisterInput |  |  |
 | RegisterInput | Hãng / Dòng / Năm | OCR-seeded | \`GET /options/brands | models | years\` | RegisterInputSecond |
-| RegisterInputSecond | km, condition, warranty, document type | — | local JSON document types | ExpectedPrice if owner |
+| RegisterInputSecond | km, condition, warranty, document type | — | local JSON document types | ExpectedPrice if owner |  |  |
 
 **Owner:** ExpectedPrice → asked price → `POST /bikes/` → `POST /upload/recognition-paper` presigned PUT if cavet image → PreValuation.
 

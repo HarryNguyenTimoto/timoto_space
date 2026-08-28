@@ -19,11 +19,11 @@ Postman is **necessary but stale**. These routes exist in git (urls.py, Apps `en
 | `POST .../listing/{bike}/cancel/` | Cancel listing while waiting | listing UI |
 | `GET .../listing/{bike}/` | Poll `buyer_found`, `poll_after_seconds: 30` | `WaitingForBuyer` |
 | `POST /operator-review-requests/` | Ask OPS; WS wait | `BikeDataAnalysis` |
-| `POST /operator-review-requests/cancel/` | **Full** cancel valuation — not TMA-168 |
+| `POST /operator-review-requests/cancel/` | **Full** cancel valuation — not TMA-168 |  |
 | `POST /bikes/assign-owner/` | Guest → authed mid-evaluate | login modal |
-| `POST /auth/zalo/native/` `.../zalo/start/` `.../apple/native/` | Live auth; Postman auth folder is mostly OTP |
+| `POST /auth/zalo/native/` `.../zalo/start/` `.../apple/native/` | Live auth; Postman auth folder is mostly OTP |  |
 | `POST /auth/register-fcm-token/` | Push | after login |
-| `DELETE /auth/account/delete/` | Personal tab |
+| `DELETE /auth/account/delete/` | Personal tab |  |
 
 ## Rider — in Apps, **not** in `bikes/urls.py` (will 404 until mounted)
 
