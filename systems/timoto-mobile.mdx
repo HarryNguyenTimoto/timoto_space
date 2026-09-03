@@ -1,37 +1,57 @@
 ---
 title: "System: timoto-mobile"
 sidebarTitle: "timoto-mobile"
-description: "Rider app Apps/ + Django api.timoto.ai"
+description: "Rider app Apps/ + Django api.timoto.ai — APIs, integrations, and automated testing."
 ---
 
 ## Summary
 
-**timoto-mobile** is the rider product: React Native `Apps/` (not legacy `TiMotoAI/`) \+ Django `backend/` on `api.timoto.ai`. Default DRF auth is Cognito JWT, but many bike/upload/OCR/evaluate routes are still **AllowAny** with device\_id checks.
+**timoto-mobile** is the rider product: React Native `Apps/` (not legacy `TiMotoAI/`) + Django `backend/` on `api.timoto.ai` / `api-staging.timoto.ai`. Default DRF auth is Cognito JWT; many bike/upload/OCR/evaluate routes are still **AllowAny** with device_id checks.
 
 ## Repos / files
 
 - App: `Apps/src/` — API `Apps/src/api/endpoints.ts`
-- Django urls: `backend/config/urls.py` \+ `backend/apps/*/urls.py`
-- Postman (101 requests): `backend/postman/Timoto_API.postman_collection.json`
+- Django urls: `backend/config/urls.py` + `backend/apps/*/urls.py`
+- Postman: `backend/postman/Timoto_API.postman_collection.json`
 - Local tests: `python manage.py test --settings=config.settings_test`
+- Test runner: `./backend/test-runner.sh backend-unit` (also: `mkt-filters`, `buy-flow`, `prod-api`, `staging-api`, `realtime-ws`, `eval-flow`)
 
 ## Frontend ↔ backend
 
-App uses REST to `API_BASE` (`https://api-staging.timoto.ai` / `https://api.timoto.ai`) plus WebSocket `:8443` with Cognito token (`apps/src/services/realtimeOperatorReview.ts`). The app **never** calls internal HMAC or gRPC. Dealer URL `https://dealer.timoto.ai` is for Zalo dealer OAuth, not seller evaluate.
+App uses REST to `API_BASE` (`https://api-staging.timoto.ai` / `https://api.timoto.ai`) plus WebSocket `:8443` with Cognito token (`apps/src/services/realtimeOperatorReview.ts`). The app **never** calls internal HMAC or gRPC.
 
 ## Backend ↔ others
 
 - AI: gRPC `EvaluateByBikeId`
-- Internal: HMAC GET operator-offer; `pg_notify` operator\_channel; webhook new-submission
-- Dealer: checkout S2S, `bike-unavailable`; inbound paid-hook \+ buyer-found HMAC
+- Internal: HMAC GET operator-offer; `pg_notify` `operator_channel` (`valuation_requested`, `pickup_scheduled`, `valuation_cancelled`, `pickup_cancelled`); webhook new-submission
+- Dealer: checkout S2S, `bike-unavailable`; inbound paid-hook + buyer-found HMAC
 
-## Gaps vs app code
+## Marketplace buy flow
 
-`marketplaceBuyService.ts` calls `/marketplace/purchase-orders/` and `/marketplace/payments/` — **no matching `urls.py`**. Treat as WIP. Do not document as live.
+Buy-flow APIs are implemented under `backend/apps/bikes/marketplace_orders_views.py` and wired in `urls.py`:
 
-## Tests
+- `GET/POST /marketplace/purchase-orders/`
+- `GET /marketplace/purchase-orders/delivery-availability/`
+- `GET/POST /marketplace/payments/{id}/` (+ regenerate)
+- VietQR: API returns **image URL** in `qr_data` / `payment_url` / `qr_image_url`
 
-~234 Django tests, not fail-hard in CI until `backend-ci.yml` is fixed. Jest in `Apps/` not in CI. See testing plan §8.
+## Tests & Coverage
+
+Full automated-testing detail page: **[Automated testing](/testing/automated-testing)**.
+
+The Django backend test suite uses isolated in-memory SQLite (`config.settings_test`).
+
+- **Total unit tests**: 293+ targeted tests across ~30 test files.
+- **`apps/users`**: OTP login, profile `GET/PUT/PATCH /auth/me/`, Zalo/Apple native, soft-delete, FCM tokens.
+- **`apps/bikes`**: Pickup schedule + OPS NOTIFY, sale history cancel, marketplace filters, purchase orders, operator-review cancel (`valuation_cancelled` / `pickup_cancelled`).
+- **`apps/evaluation`**: HMAC signatures, AI `output_jsons`, TIPP dual-pricing, seller listing.
+- **`apps/feedback`, `apps/ocr`, `apps/options`**: Feedback, cavet OCR, FMP price range.
+
+### Execution
+
+```bash
+./backend/test-runner.sh backend-unit
+```
 
 ## Do not
 
