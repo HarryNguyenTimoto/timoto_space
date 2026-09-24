@@ -1,0 +1,126 @@
+---
+title: "Internal OPS API Route Ledger"
+sidebarTitle: "OPS routes deep dive"
+description: "Source-extracted route inventory with concrete method, handler ownership, response branch, and error evidence."
+---
+
+# Internal OPS API Route Ledger
+
+## Route root
+
+backend/config/urls.py mounts health at /health/ and bikes.api_urls at /api/. backend/bikes/api_urls.py is the exhaustive route list. Methods below are determined by the mapped APIView; inspect class methods for the final allowed verb. UUID placeholders are bike_id, user_id, notification_id.
+
+## Platform and identity
+
+| Path under /api | Handler | Purpose |
+| --- | --- | --- |
+| / | ApiRootView | API index |
+| /health/ | HealthCheckView | Health |
+| /schema/ | SpectacularAPIView | OpenAPI schema |
+| /docs/ | Swagger UI | Interactive API docs |
+| /auth/login/ | JwtLoginView | Staff sign-in |
+| /auth/refresh/ | JwtRefreshView | Token refresh |
+| /auth/logout/ | JwtLogoutView | Logout |
+| /auth/zalo/native/, no-slash alias | InternalZaloLoginView | Native social login |
+| /auth/zalo/internal-login/, no-slash alias | InternalZaloLoginView | Compatibility login |
+| /auth/register-fcm-token, /auth/register-fcm-token/ | RegisterFcmTokenView | Device registration |
+| /auth/me/ | AuthMeView | Current staff identity |
+| /admin/staff/ | StaffListCreateView | Admin staff list/create |
+| /admin/staff/:user_id/ | StaffDetailView | Admin staff detail/update |
+| /admin/staff/:user_id/reset-password/ | StaffResetPasswordView | Admin reset action |
+
+## Webhooks and operator offer
+
+- POST /api/webhooks/tma/new-submission/ -> TmaNewSubmissionWebhookView
+- POST /api/webhooks/bank/payout/ -> BankPayoutWebhookView
+- POST /api/v1/mobile/operator-offer/ and no-slash alias -> MobileOperatorOfferReadView
+
+The TMA and bank paths are integration endpoints, not ordinary staff UI calls. Signature, event identity, replay behavior and allowed body must come from handler. Operator-offer may use a separate mobile secret/signature validation; do not conflate the two HMAC schemes.
+
+## Submission and notification routes
+
+- GET /api/submissions/
+- GET /api/submissions/:bike_id/
+- GET /api/submissions/:bike_id/pricing/
+- POST /api/submissions/:bike_id/ai-review-choice/
+- GET /api/submissions/:bike_id/ai-report/
+- POST /api/submissions/:bike_id/submit/
+- POST /api/submissions/:bike_id/reject/
+- GET /api/submissions/:bike_id/success/
+- GET /api/notifications/
+- POST /api/notifications/read-all/
+- POST /api/notifications/:notification_id/read/
+
+Handlers are in submissions_api.py. Queue and detail are read projections. Submit/reject are mutating commands. Success is a projection and should not be treated as a command. AI choice/report are separate: selected recommendation does not itself equal confirmed valuation.
+
+## Bikes and valuation routes
+
+- GET /api/bikes/
+- GET /api/bikes/:bike_id/
+- GET /api/dashboard/
+- GET /api/valuation/queue/
+- GET /api/valuation/bikes/:bike_id/
+- POST /api/valuation/bikes/:bike_id/pricing/
+- POST /api/valuation/bikes/:bike_id/confirm/
+- GET /api/valuation/bikes/:bike_id/success/
+
+The earlier compact matrix omitted the bike_id segment on pricing/confirm/success. api_urls.py is authoritative: include it in clients and docs.
+
+## Vehicle sale routes
+
+- GET /api/vehicles/
+- GET /api/vehicles/pending-sale/
+- GET /api/vehicles/:bike_id/
+- POST /api/vehicles/:bike_id/sale/
+- POST /api/vehicles/:bike_id/sale/complete/
+- POST /api/vehicles/:bike_id/sale/fail/
+
+sales_api.py calls domain helpers in sale.py. Complete and fail have transition requirements. Sale completion can publish eligible gas vehicles into dealer catalog according to configuration. Capture transaction boundary and publication retry behavior before promising atomic cross-database completion.
+
+## Pickup routes
+
+- GET /api/pickups/
+- GET /api/pickups/:bike_id/
+- POST /api/pickups/:bike_id/inspection/
+- POST /api/pickups/:bike_id/picked-up/
+- POST /api/pickups/:bike_id/complete/
+- POST /api/pickups/:bike_id/reject/
+
+Pickup completion and sale completion are different resource transitions. The handlers project schedules and validation; the state helper may create or repair a BikeSaleRecord. Rejection should capture reason and actor.
+
+## Purchase routes
+
+- GET /api/purchases/
+- GET /api/purchases/:bike_id/
+- POST /api/purchases/:bike_id/bank/
+- POST /api/purchases/:bike_id/inspection/pass/
+- POST /api/purchases/:bike_id/deposit/pay/
+- POST /api/purchases/:bike_id/confirm-pickup/
+- POST /api/purchases/:bike_id/notary/confirm/
+- POST /api/purchases/:bike_id/remaining/pay/
+- POST /api/purchases/:bike_id/complete/
+- POST /api/purchases/:bike_id/reject/
+
+Earlier catalog shortened or changed multiple route segments. This exact ledger follows backend/bikes/api_urls.py. purchases_api.py derives user-facing step/status from sale record, pickup schedule and purchase data. Do not infer purchase is a separate model merely from URL name; inspect models and database access.
+
+## Response body evidence
+
+Responses are custom APIView payloads, not guaranteed common DRF serializer envelopes. Inspect \_sale_error_response in sales_api.py/purchases_api.py and response builders in api_helpers.py, purchases_api.py, and submissions_api.py. Business transition exceptions are converted to an API error body. Record status and body for each exception branch and preserve current status codes; don't standardize without API versioning.
+
+Authentication is centralized in permission helpers such as \_require_ops for purchases. For each view, publish anonymous result, authenticated wrong-role result, not-found result, invalid-state result and success fixture. A route's presence in api_urls.py alone does not say whether it is public or role protected.
+
+## Operational ledger
+
+| Concern | Evidence file | Required contract |
+| --- | --- | --- |
+| queue filter/SLA | domain.py, ops_api.py | status inclusion, sorting, timezone |
+| FMP math | tipp_pricing.py | current rates, snapshot, rounding |
+| TMA callbacks | tma_client.py, realtime_bridge.py | HMAC, retry, outbox state |
+| sale transition | sale.py | predecessor/successor, record creation |
+| pickup | pickups_api.py | inspection and custody fields |
+| purchase | purchases_api.py | state projection and bank payout |
+| logs | timoto/observability.py | safe request/error event schema |
+
+## Mismatches corrected from prior page
+
+The actual valuation pricing route is /api/valuation/bikes/:bike_id/pricing/, not /api/valuation/pricing/. Purchase commands use inspection/pass, deposit/pay, notary/confirm segments. Internal APIs name bike UUID in purchase paths even though user interface calls them purchases. Mobile callback routes under /api/webhooks/\* are distinct from internal dashboard calls. Use these exact route strings for Postman sync.

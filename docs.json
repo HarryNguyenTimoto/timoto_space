@@ -174,7 +174,11 @@
           "apis/mobile-full-reference",
           "apis/internal-full-reference",
           "apis/dealer-full-reference",
-          "apis/complete-endpoint-catalog"
+          "apis/complete-endpoint-catalog",
+          "apis/dealer-route-ledger",
+          "apis/mobile-route-ledger",
+          "apis/internal-route-ledger",
+          "apis/response-contracts-evidence"
         ]
       },
       {

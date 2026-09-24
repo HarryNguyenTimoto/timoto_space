@@ -6,4 +6,67 @@ description: "Frontend route, API client, state, deployment, and compatibility a
 
 # Deep Dive: timoto_dealer_portal_v2
 
-Deep dive under construction.
+## What this root is
+
+Root: /Users/toannguyen/timoto_dealer_portal_v2. This is a React/Vite dealer portal client with frontend API/types and infrastructure for hosting the frontend. It is not the dealer backend repository. Its API contract comes from frontend/src/api/APIs.ts and frontend/src/api/axiosClient.ts; its direct target is selected via environment variables and deployment configuration. Treat the paired timoto-dealer-portal backend as a candidate contract, then verify host, route prefix and release before declaring compatibility.
+
+## Frontend architecture
+
+The app has route families including v2 catalog, bike detail, checkout/pay, confirmation, orders and account flows. Screens import service objects from frontend/src/api/APIs.ts, while axiosClient centralizes base URL, auth token and errors. UI route-level state and browser navigation live in frontend/src/pages and app/router files. Vite/Nginx/deployment configuration determines SPA behavior and base path. The infrastructure/ecs-fargate scripts separately deploy frontend/landing tasks; these are deployment mechanisms, not API business logic.
+
+## Auth consumer contract
+
+The typed auth service:
+
+- GET /auth/me/
+- POST /auth/check-user/ with identifier
+- POST /auth/signup/ with phone_number and optional email
+- POST /auth/confirm-signup/ with phone_number and confirmation_code
+- POST /auth/resend-code/ with identifier
+- POST /auth/login/ with phone_number, optionally code
+- PATCH /auth/update-store-info/ with store_name/address/commune/province/storesize
+
+Comments define a two-step passwordless OTP pattern. Confirm whether login step one and verification share /auth/login/ based on backend implementation; do not infer one endpoint per stage. Token persistence and refresh behavior are owned by axiosClient and should be documented precisely from the interceptor code. Public requests must not accidentally attach stale authorization; private calls must not silently proceed without a token.
+
+## Consumer data contracts
+
+BikeItem includes bike_id, masked_bike_id, brand/model/year/color/mileage/condition/location, old_or_new, bike_type, warranty, assessment summary and price. BikesResponse is DRF-like count/next/previous/results. CatalogBikeItem uses combo_id (plus id alias), grouped quantity/price, bike ids, media and catalog facts. CatalogBikeDetail adds evaluation parts, additional info, delivery days/fee and warehouse. This distinction matters: bike_id addresses a physical listing/vehicle while combo_id addresses an inventory bundle.
+
+Order request contains combo_id items, delivery_location and payment_method. Order response contains dealer_order_id, masked code, line items/quantity/unit/line totals, total, delivery/payment statuses, method and action flags can_cancel/can_receive/can_pay/can_get_invoice/can_reorder. UI behavior should use server action flags to prevent stale client rules from enabling an invalid transition.
+
+## Client endpoint inventory and backend mapping
+
+| Client request | Intended feature | Candidate server owner | Current evidence |
+| --- | --- | --- | --- |
+| GET /bikes/ and /bikes/:id/ | Admin/physical bikes | dealer /api/v1/bikes/ assessment viewset | Verify exact serializer and permissions |
+| GET /catalog/bikes/ | Catalog list | dealer /api/v1/catalog/ | Strong prefix match |
+| GET /catalog/bikes/:comboId/ | Catalog detail | dealer catalog router | Strong prefix match |
+| GET /catalog/bikes/:comboId/similar/ | Similar combo recommendations | Candidate action on CatalogViewSet | Route existence not confirmed by URL output alone |
+| GET /orders/ and detail | Dealer orders | dealer order router | Strong prefix match |
+| POST order/checkout actions | Order creation/payment | orders or payments app | Inspect all APIs.ts below line 280 and backend serializer/action |
+| GET /notifications/ | Notification list | notification router | Strong prefix match |
+| POST device token | Push registration | notification device viewset | Verify exact route/method |
+| GET /evaluations/bikes/:bikeId/ai-report/ | AI report | evaluations app | Exact URL declared |
+| POST /bikes/:bikeId/assessment/ | Assessment action | bike assessment viewset | Verify router basename/action URL |
+| GET /auth/zalo/\* | Social auth | users app | May differ by proxy path |
+
+API_NOTES: frontend/src/utils/apiError.ts extracts HTTP status, attempted URL, method, response body and a display message. Keep server detail separate from generic user-facing copy and redact tokens/PII from logs. Screens commonly support both array and paginated results; preserve normalization behavior and test both shapes.
+
+## Error and stale-state design
+
+Network errors should retain attempted URL and status in diagnostics but should not expose bearer token or complete callback URL. 401 should trigger the configured refresh/sign-out policy; 403 should show permission failure; 404 should display missing item while telemetry distinguishes route mismatch; 409 should refresh order/payment state; timeout after payment creation must trigger GET checkout/order reconcile. Never optimistically label an order paid from QR display or a redirect.
+
+## Deployment and configuration
+
+Inspect frontend/.env.\* and vite config for VITE_API_BASE_URL/other API vars, while treating files that contain credentials as sensitive. Inspect infrastructure/ecs-fargate and frontend/nginx.conf for path rewrites and host routing. Record the actual configured API origin by environment, path prefix, TLS, CORS, auth issuer, and deployment commit. A successful static landing page does not establish API reachability.
+
+## Acceptance requirements
+
+- Contract test each typed API against the corresponding backend route.
+- Compare all client method/path pairs to Django URL resolver output.
+- Ensure public requests do not leak private data and protected requests include current auth.
+- Verify pagination and array response compatibility.
+- Simulate 401 refresh, 403, route 404, 409 order-state conflict, offline retry, and payment timeout.
+- Confirm UI action flags mirror backend permissions and state.
+- Verify SPA deep links under deployed rewrite.
+- Keep exact type changes aligned with backend serializer and test fixtures.

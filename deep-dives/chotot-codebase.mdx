@@ -6,4 +6,75 @@ description: "Code-derived scraper, DynamoDB, S3, SQS image sync, refresh, expor
 
 # Deep Dive: chototcaodulieu Codebase
 
-Deep dive under construction.
+## Scope and operating model
+
+Root: /Users/toannguyen/chototcaodulieu. This repository is a collection of scraping, backfill, image synchronization, export, dashboard and AWS deployment tools, rather than one small service. The canonical daily Lambda flow is described in chotot.py; other scripts are one-time/historical snapshots and must not be conflated with the scheduled path. AGENT_HANDOFF.md identifies DynamoDB chotot-xe-may, image sync state table, S3 bucket, queue/DLQ and EventBridge schedules. Validate these against current AWS before operational changes.
+
+## Daily listing pipeline
+
+chotot.py defines Chotot v1 public listing endpoint and v2 detail endpoint, request session/retry adapter, Vietnam-local day bounds and category parameters. scrape_day:
+
+1. computes local target day epoch range;
+2. paginates listing calls and extracts list IDs;
+3. fetches details concurrently;
+4. accumulates raw source records;
+5. upserts DynamoDB by list_id. The request layer must handle non-200, malformed JSON, throttling and transient network failures. Request retry count, headers and timeouts live in \_make_session/\_fetch_listing_page/\_fetch_detail_one. Listing pages and detail records have different completeness. A listing record without detail should be represented as partial/failed enrichment, not silently treated as a full vehicle row.
+
+upsert_to_dynamodb uses the low-level DynamoDB client and TypeSerializer to write batches. The table key is list_id and raw JSON is retained. BatchWriteItem can return unprocessed items; successful invocation alone does not prove every row stored. Capture accepted, rejected, unprocessed counts and checkpoint only after retry strategy succeeds.
+
+## Weekly refresh
+
+refresh_handler.py scans list_id keys using LastEvaluatedKey, reads an S3 JSON checkpoint, invokes v2 detail fetches in bounded batches and upserts successful detail rows. It tracks run_id, processed/refreshed/errors/status and last_evaluated_key. A time budget triggers checkpoint save and asynchronous self-invocation. dry_run suppresses writes/checkpoint. reset begins a new run. Operationally:
+
+- checkpoint version/schema should be validated before continuing;
+- concurrent refresh runs need a single-writer/lease policy;
+- an item with failed detail fetch stays eligible for another pass;
+- completion means scan finished, not every detail fetched successfully;
+- reset is a stateful destructive semantic and should be used deliberately.
+
+## Images and S3
+
+Image pipeline uses a producer and SQS queue to schedule records; a worker downloads and writes images to S3. AGENT_HANDOFF lists queue chotot-image-sync-queue and DLQ chotot-image-sync-dlq. monitor_image_sync.py polls queue stats and summarizes state table/S3 counts. Message contracts should include list_id, source URLs, image type/order and attempt metadata. Worker response is message delete after successful processing, visibility retry on transient errors, DLQ after configured redrive. Ensure content-type, size limits, URL validation, checksum/key determinism and S3 ACL policy. Public URLs/CloudFront delivery have separate cache invalidation behavior.
+
+## Export and dashboard flows
+
+CSV/JSONL/export scripts normalize source attributes, map original image URLs to S3 keys, combine snapshot and recent DynamoDB rows, generate metadata/sample files and upload to S3. Some scripts contain machine-local Downloads paths; these are operator utilities and should not run unreviewed in scheduled Lambda. Export correctness includes row counts, duplicate IDs, schema version, timestamps and source watermark. A CDN invalidation is an external write and should only occur after successful upload. Dashboard API and static frontend are distinct from the ingestion source.
+
+## Data model and quality
+
+Raw Chotot ad shape is nested under ad and can evolve upstream. Keep raw payload plus normalized fields so parser failures are recoverable. Track first_seen, last_seen, source listing timestamp, detail-fetch timestamp, scrape run id, image status, quality rejection reason and source URL. Filtering should preserve reason codes rather than dropping all evidence. Prices are VND and should be parsed to integer with null/invalid distinction. Time is Vietnam local for collection windows and UTC for storage/event timestamps; avoid naive local timestamps.
+
+## Failure taxonomy
+
+- upstream listing 429/5xx: bounded exponential retry, then run-level failure/checkpoint;
+- detail 404/removed: mark unavailable/removed and retain history;
+- malformed item: quarantine by list_id and continue batch;
+- DynamoDB throttling/unprocessed write: retry only those items;
+- S3 put failure: retain queue message for retry;
+- poison image URL/message: fail safely and DLQ;
+- refresh timeout: persist cursor before self-chain;
+- export upload failure: preserve previous output and do not invalidate CDN;
+- checkpoint parse/schema error: halt rather than reset silently.
+
+## Security, privacy and terms
+
+Scraping source traffic should be rate limited and aligned with source terms. Never publish raw user/seller personal information from ads without policy basis. Restrict S3/DynamoDB IAM by required prefix/table; avoid credentials in scripts. Downloaders must defend against arbitrary URL/SSRF by allowlisting Chotot image hosts, enforcing HTTPS, blocking private IP ranges and bounding redirects/timeouts. Logs should use listing IDs and counters, not full raw ad objects.
+
+## Observability and reconciliation
+
+Each run needs run_id, target date/range, requested/listed/detail-success/detail-failure/upsert/export counts, retry count, checkpoint key and elapsed time. Reconcile listing IDs in source pages with DynamoDB unique key count; verify samples against raw detail; count images expected/downloaded/DLQ; check latest checkpoint; compare export count/hash to database snapshot. Separate "run completed", "data complete", "export uploaded" and "CDN current" states.
+
+## Source map
+
+- chotot.py: daily scraper, session and DynamoDB upsert.
+- refresh_handler.py: weekly detail refresh and cursor continuation.
+- scrape_by_seller.py: seller-focused scrape variant.
+- monitor_image_sync.py: queue/state reporting.
+- package_raw_jsonl_s3.py and export_full_database_raw_jsonl_s3.py: export and S3 upload.
+- backfill_missing_and_complete_full.py: full backfill with large output side effects.
+- deploy_weekly_refresh.py, setup_aws.sh: deployment utilities; inspect all mutations before run.
+- docs-kb/TIMOTO_PLATFORM_ARCHITECTURE_OVERVIEW.md: historical overview; claims such as rotating proxies are not implementation evidence.
+
+## Acceptance scenarios
+
+Test duplicate listing ingestion, changed detail payload, absent detail, invalid JSON, 429/5xx retries, partial DynamoDB batch, checkpoint resume, dry run, reset, time-budget self-chain, concurrent worker behavior, SQS duplicate delivery, poison image, DLQ, export duplicate suppression, upload failure and CDN invalidation ordering. Fixture tests should avoid live Chotot/AWS calls by default and record which smoke tests are live.

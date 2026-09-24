@@ -6,4 +6,58 @@ description: "Code-derived landing page, device routing, waitlist behavior, asse
 
 # Deep Dive: TiMoto-AI-Web Codebase
 
-Deep dive under construction.
+## Product and runtime
+
+Root: /Users/toannguyen/TiMoto-AI-Web. Frontend is React 18 + TypeScript + Vite, React Router 7. frontend/src/App.tsx defines only / and /landingpage and maps both to LandingPage. frontend/vercel.json rewrites all paths to /index.html, allowing SPA fallback. Production/staging build scripts are in frontend/package.json. The page is a public acquisition/product education surface, not the authenticated vehicle transaction application.
+
+## Landing page behavior
+
+LandingPage.tsx owns responsive presentation, nav/scroll behavior, product step/testimonial sliders, FAQs, app-store links, Android waitlist modal and an email form. It detects iOS/Android via navigator, sends iOS to the App Store, opens an Android waitlist modal, and scrolls desktop to an app section. Menu anchors use local section refs and smooth scroll. Carousel timers pause/resume from input state and viewport interactions. Accessibility and analytics behavior should be reviewed against the actual rendered elements and PostHog initialization; a visually present control is not evidence its form submits to a backend.
+
+### Form truth from source
+
+submitAndroidWaitlist trims phone and email, requires at least one, shows a validation alert if both empty, and otherwise displays a thank-you alert then clears values and closes the modal. The source comment says no backend wired yet. handleEmailSubmit logs email to console and clears it. Neither path performs fetch/axios. Therefore current form success is client-side UI feedback only; no record, confirmation, or notification persistence is established by the form implementation.
+
+This distinction should be visible to product and support teams. If storage is required, the implementation needs an explicit server API, consent/privacy notice, validation/rate limiting, persistence and success based on server acknowledgement.
+
+## Routes, API and external dependencies
+
+| Surface | Path/call | Current source behavior |
+| --- | --- | --- |
+| Landing | GET / | SPA document and React landing page |
+| Alias | GET /landingpage | Same page |
+| Android waitlist | submitAndroidWaitlist | Local validation/alert/clear only |
+| Email form | handleEmailSubmit | Console log/clear only |
+| iOS store | external App Store URL | Browser navigation |
+| Zalo/Facebook | external profile/official account URLs | External navigation |
+| Waitlist Lambda in docs-kb | separate contract | Not called by this React source |
+
+There are no app API route modules, no axios service and no server state management visible in the app package. If deployment uses a separate API proxy not represented in frontend source, that needs deployment evidence before documenting it.
+
+## Content and assets
+
+Brand/partner logos, landing step images, backgrounds, QR and testimonial media are imported from frontend/src/assets/LandingPage. Local data likely supplies structured static brand/testimonial content. Assets affect product claims and download guidance; edits should be checked against legal/product approval and image alt text. Keep responsive image weight and lazy loading under control.
+
+## Operational response behavior
+
+Static-host request failures produce platform HTTP behavior. Client-side form validation failures use alert; there is no HTTP error mapping because no form network request occurs. Browser-level errors (blocked external link, slow image) should not be conflated with API outages. Metrics should record only consented interaction events and never log entered email/phone as plaintext.
+
+## Deployment specification
+
+- Vite build defines staging and production modes.
+- Vercel config provides global SPA rewrite.
+- Dockerfile is available for container build.
+- frontend/.env.production and staging set build-time values: inspect keys only and never copy secrets into docs.
+- A route smoke test should visit / and /landingpage after each deployment, ensure assets load, check mobile viewport and verify external links are intentional.
+- If a waitlist endpoint is later wired, document origin, method, request schema, data retention, duplicate behavior, rate limit, auth/anti-abuse and exact acknowledgement.
+
+## Feature acceptance
+
+1. iOS device routes to the configured App Store URL.
+2. Android device opens waitlist UI and retains input on validation failure.
+3. Valid waitlist submit has an accurately worded acknowledgement reflecting whether data is saved.
+4. Desktop download action scrolls to the relevant section.
+5. SPA direct deep-link refresh resolves.
+6. No browser console output contains entered personal information.
+7. Keyboard users can open/close modal, reach inputs and submit with accessible labels.
+8. Analytics events exclude email/phone, and consent governs analytics initialization.

@@ -6,4 +6,93 @@ description: "Code-derived repair control plane, safety gates, ECS runner, evide
 
 # Deep Dive: AI_infra_timoto Codebase
 
-Deep dive under construction.
+## Product boundary
+
+Root: /Users/toannguyen/AI_infra_timoto. README and docs/design describe a six-target backend incident repair control plane covering dealer, internal and mobile staging/production. It ingests sanitized backend 5xx evidence, binds it to trusted CloudWatch source identity and release SHA, runs a bounded isolated workflow, verifies evidence, signs valid repair artifacts and opens a draft PR. Human review is required for merge/deploy. The control plane is not a generic repository agent and not a production deployer.
+
+## Runtime topology
+
+| Component | Source | Responsibility |
+| --- | --- | --- |
+| Target registry | timoto_repair/registry.py | six immutable target identities/host/repo/environment |
+| Intake normalization | intake.py, aws_intake.py | event schema, redaction, source binding, dedup |
+| Incident state | control.py, dispatch.py, infra | leases, repo exclusion, global slots, stale-result rejection |
+| Source handoff | source_handoff.py, services/source-broker | immutable GitHub SHA snapshot to private S3 |
+| Repair execution | execution.py, services/model-runner | validated model/test contract, restricted patch |
+| Result validation | verifier.py | target/lease/SHA binding and artifact/signature checks |
+| Publication | artifacts.py, outbox.py, github-publisher | branch + draft PR, durable receipt |
+| Jira/observability | jira_sync.py, jira_lifecycle.py, infra | issue state and monitoring |
+| State credential storage | oauth_store.py, cli_state_store.py, keyring_store.py | encrypted/restorable CLI state, scoped IAM |
+
+Terraform is in infra/. README distinguishes deployed pieces from disabled dispatcher/EventBridge and missing dependency-complete test/runtime gates. Region details and live state are time-sensitive; verify deployment outputs before operational conclusions.
+
+## Incident path
+
+1. CloudWatch subscription forwards records. Source target is derived from trusted log group/stream binding, never caller-supplied environment.
+2. aws_intake decodes, validates and sanitizes events. intake.normalize limits identifiers/text, accepts only 5xx event types and canonical method/route/release metadata.
+3. Evidence bundle groups route/method/release events in 15-minute buckets; grouping is not proof of a shared cause.
+4. Collector persists encrypted evidence and incident record transactionally with dedup marker. Duplicate event is acknowledged idempotently.
+5. Dispatcher acquires bounded global slot and per-repository lock, creates lease token, freezes ECS RunTask parameters/idempotency token, and records launch metadata. Ambiguous task launches require reconciliation and retain locks.
+6. Source broker gets exact target repository and full immutable SHA, creates bounded backend source archive/manifest in private bucket; Git credential remains in broker, not model runner.
+7. Runner receives sanitized incident, evidence and source snapshot. It must reproduce a regression before change, modify a narrow backend-only Python patch and run trusted test command in isolated runtime.
+8. Candidate result goes to verifier. The verifier validates schema, target/repository/incident/lease/source SHA, candidate artifact shape and test evidence; KMS signs canonical artifact.
+9. Publisher pushes only the bound repair branch and opens draft PR; it records a durable receipt. No merge/deploy permission.
+10. Jira status/receipt and operator state reconcile after ambiguous failure. Missing or invalid result becomes BLOCKED/RESULT_PENDING, not success.
+
+## Critical state distinctions
+
+| State | Meaning |
+| --- | --- |
+| INTAKE / queued | Incident evidence accepted and durably recorded |
+| CLAIMED / running | Worker owns a lease; not proof source retrieved |
+| SOURCE_READY | Source snapshot bound; not proof model execution |
+| RESULT_PENDING | Runner outcome awaits trusted validation |
+| BLOCKED | A defined prerequisite/evidence/safety gate failed |
+| ARTIFACT_READY | Signed artifact verified for exact source and target |
+| PR_PENDING | Publisher launch/receipt pending |
+| DRAFT_PR_CREATED | Draft PR exists, still needs human review |
+| APPROVAL_PENDING | Human must approve exact deploy operation |
+| DEPLOYING / VERIFYING | Separate approved deployment/observation lifecycle |
+| RESOLVED / ROLLBACK_REQUIRED | Verified outcome or requested human rollback |
+
+Exact enum names are implemented across control.py, dispatch.py, verifier.py and Jira lifecycle; this table normalizes semantics for operators. Consult each transition guard before changing state.
+
+## Security contract
+
+RepairContract requires exact target/repository match, immutable 40-character source SHA, verified model/auth persistence, no extra credits, isolation enabled, no production credentials, trusted Python test argv and deployment binding. Patch validator limits file count, requires backend-root paths and .py suffix, rejects migrations/config/symlinks/path traversal. Model prompt treats logs/repository as untrusted instructions and forbids changing deploy/auth/dependencies/secrets/workflows. Regression gate requires same test fail on baseline and pass on candidate. These are independent validators; they do not alone prove the runtime process was safely isolated.
+
+IAM separates CloudWatch intake, evidence storage, source broker, runner, KMS verifier and publisher. Runner must not receive GitHub credential or merge/deploy permissions. Publisher can push repair branch and draft PR only. KMS signing happens after independent validation. HMAC/access secrets never belong in evidence or model prompt.
+
+## Failure semantics
+
+- untrusted or spoofed CloudWatch source: reject; do not create incident;
+- missing/short release SHA: evidence-only or blocked because immutable checkout cannot be established;
+- duplicate event: acknowledge without duplicate incident;
+- missing source artifact: BLOCKED with source reason;
+- ECS RunTask ambiguity: keep repository lock; reconcile by deterministic token/startedBy/task ARN;
+- worker lease stale: discard result unless target/incident/lease match;
+- model failure/no patch/test failure: BLOCKED; no billing fallback;
+- invalid candidate/schema/path: reject artifact and preserve incident for operator;
+- KMS signing failure: artifact is not ready;
+- publisher timeout after push/PR: reconcile Git branch/PR and durable receipt before retry;
+- any merge/deploy: requires independent human approval bound to target, SHA, action and expiry.
+
+## Observability
+
+App services emit structured API request/exception events with route template, method, status, error type/fingerprint, sanitized stack frames, service/environment/region/release SHA and request id. Intake strips URL query and sensitive values. An incident is a correlation bundle with original event fingerprints. It is not a complete trace and does not establish root cause. Dashboard counts must distinguish incoming, blocked, result pending, PR pending, draft PR and approval/deploy statuses.
+
+## Source modules
+
+- timoto_repair/registry.py: target identity.
+- timoto_repair/intake.py and aws_intake.py: schema, identity, validation, S3/DynamoDB.
+- timoto_repair/control.py and dispatch.py: state/lease/launch protocol.
+- timoto_repair/source_handoff.py and services/source-broker/broker.py: SHA-pinned checkout bundle.
+- timoto_repair/execution.py and services/model-runner/model_runner.py: patch/test protocol.
+- timoto_repair/verifier.py and artifacts.py: result and signing.
+- timoto_repair/outbox.py/integrations.py and services/github-publisher/publisher.py: at-most-once reservation, PR publication.
+- infra/\*.tf: IAM, queues, Lambda, ECS, S3, DynamoDB, KMS configuration.
+- docs/e2e-readiness-2026-09-20.md: current external blockers/readiness.
+
+## Acceptance cases
+
+Test unknown/spoofed source, redaction of tokens/URLs/PII, duplicate event, time bucket boundary, concurrent same-repo incidents, two global slots, stale lease and stale task result, RunTask ambiguous response, immutable SHA, source manifest tamper, patch path traversal/symlink, no-network sandbox, baseline regression failure and candidate pass, modified test rejection, unsigned artifact, invalid KMS signature, duplicate PR publication, branch mismatch, publisher crash after external side effect and operator approval expiry.
