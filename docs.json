@@ -189,6 +189,7 @@
         "pages": [
           "index",
           "quickstart",
+          "how-to-use-and-contribute",
           "how-agents-use-this",
           "how-agents-use-this/deep-prompt",
           "how-agents-use-this/six-repo-master-prompt"

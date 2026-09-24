@@ -1,0 +1,169 @@
+---
+title: "How to Use and Contribute to the TiMoto Knowledge Base"
+sidebarTitle: "Use and contribute to the KB"
+description: "A practical guide for finding, reading, updating, reviewing, and publishing accurate TiMoto engineering knowledge."
+keywords:
+  - "knowledge base"
+  - "contribute"
+  - "Mintlify"
+  - "documentation"
+  - "how to"
+---
+
+The TiMoto knowledge base (KB) is the private Mintlify documentation site for product flows, architecture, API contracts, operations, and the seven TiMoto project roots. This guide explains how to use it as a reader and how to add or update content safely.
+
+<Note>
+The KB is private. Sign in with your authorized company account. Never make the site public just to make access easier for an agent or integration.
+</Note>
+
+## 1. Choose the right source of truth
+
+Use each system for what it owns:
+
+| Need | Source |
+| --- | --- |
+| Current implementation and exact runtime behavior | The relevant repository, tests, and deployed release evidence |
+| Shared product flows, contracts, architecture, and operational guidance | This Mintlify KB |
+| Work ownership, decisions, and delivery status | Jira |
+| Recorded UI acceptance/E2E evidence | Autonoma artifacts and exported tests |
+| API exploration and saved request examples | Postman, checked against the current code and KB |
+
+The KB is a map and a durable explanation, not proof that an endpoint is deployed or that a feature is enabled in production. A client route can exist without a matching server route; a repository README can describe an older deployment. Mark uncertain facts as **unverified**, cite the evidence, and do not turn assumptions into guarantees.
+
+## 2. Find information quickly
+
+1. Start at [Getting started](/index) for role-based entry points and the project map.
+2. Read [Big picture](/architecture/big-picture) before changing a cross-project flow.
+3. Pick the right section in the navigation:
+   - **Architecture & Systems** for repository ownership, boundaries, data stores, and deployment.
+   - **End-to-End Flows** for user and operator journeys across systems.
+   - **Features & Tickets** for behavior and acceptance criteria.
+   - **APIs & Postman** for routes, auth, request/response behavior, and examples.
+   - The individual product groups for codebase-specific implementation details.
+4. Use Mintlify search with a route, model, screen name, ticket ID, error string, or distinctive code symbol. Search a likely exact phrase first; broaden it if needed.
+5. Follow related-page links, then open the cited source path when implementation detail matters.
+
+For an agent or an MCP-enabled editor, use the published-site MCP endpoint `https://timoto-ai.mintlify.app/authed/mcp` with the configured Mintlify Auth flow. The Admin MCP is for editing the docs site; it is not the reader endpoint. In Jira or Autonoma, cite a stable page slug such as `mintlify:/architecture/big-picture` or `mintlify:/apis/mobile-route-ledger`, not a transient editor URL.
+
+## 3. Decide whether to add a page or update one
+
+Before writing, search the KB and inspect the closest existing page. Prefer updating the existing canonical page over creating a duplicate.
+
+Choose a page type by the question it answers:
+
+| Page type | Use it for | Typical location |
+| --- | --- | --- |
+| System / architecture | What owns a capability, where data lives, and how services connect | `/systems/*`, `/architecture/*` |
+| End-to-end flow | What happens from a user action through downstream systems | `/flows/*` |
+| Feature contract | What behavior, constraints, states, and acceptance criteria a feature has | `/features/*` |
+| API contract | What a route accepts, returns, authenticates, and changes | `/apis/*` |
+| Runbook | How an operator diagnoses or executes a bounded procedure | Relevant system or operations section |
+
+A change spanning repositories should update the shared contract and all affected system/API pages in the same documentation change. Link between pages instead of copying large sections.
+
+## 4. Gather evidence before editing
+
+1. Identify the exact repository root and branch/commit being described.
+2. Read the relevant implementation, route registration, serializers/schemas, tests, and deployment configuration. For a cross-system flow, inspect both producer and consumer.
+3. Separate evidence into:
+   - **Implemented** — directly present in code.
+   - **Tested** — exercised by a named test or fixture.
+   - **Deployed / live** — verified against a release, environment, or public/private endpoint.
+   - **Proposed / unverified** — not established by the above.
+4. Record exact file paths and useful line ranges (for example, `backend/app/views.py:L120-L158`). Include a test path or commit SHA where useful.
+5. For response contracts, derive success and error shapes from serializers, handlers, tests, or saved responses. If a branch is not evidenced, say so instead of inventing a “clean” response.
+6. For mutable infrastructure facts, recheck the live configuration. Treat old runbooks, tickets, and architecture diagrams as leads, not current truth.
+
+## 5. Write a useful page
+
+Keep the title specific, start with the outcome, and make the page usable without its author present. Follow [How agents use this](/how-agents-use-this) for the canonical feature/flow schema. A typical page should contain:
+
+- **Summary** — one paragraph describing behavior and scope.
+- **Repos** — which repositories own the behavior.
+- **Files** — exact implementation and test paths.
+- **Flow / HTTP** — ordered steps, methods, paths, hosts, and auth as applicable.
+- **Contract** — request, success response, errors, side effects, and state transitions.
+- **Invariants** — conditions that must remain true.
+- **Tests / Evidence** — test names, fixtures, environment, release SHA, and what remains unverified.
+- **Do not** — likely implementation mistakes or unsafe assumptions.
+- **Related pages** — canonical links to adjacent flows, systems, APIs, and tickets.
+
+Keep response examples sanitized and source-grounded. Explain user-visible failures separately from transport failures, validation failures, authorization failures, and downstream dependency failures only where the code supports that distinction.
+
+### Lightweight feature/API page skeleton
+
+```md
+## Summary
+<Capability, actor, outcome, and boundary>
+
+## Repos
+- <producer repo>
+- <consumer repo, if any>
+
+## Files
+- `<exact implementation path>:Lx-Ly`
+- `<exact test path>`
+
+## Flow
+1. <actor action>
+2. <request or event and owner>
+3. <state change / downstream effect>
+4. <success or failure visible to the actor>
+
+## HTTP / Contract
+- Method + path:
+- Auth:
+- Request:
+- Success response (evidence):
+- Error branches (evidence):
+- Side effects / idempotency:
+
+## Invariants
+- <must remain true>
+
+## Tests and evidence
+- <test, fixture, environment, or release SHA>
+- <known gap / unverified item>
+
+## Do not
+- <unsafe or unsupported assumption>
+```
+
+## 6. Add or update content in Mintlify
+
+Use the authorized Mintlify editor or Admin MCP for the `timoto-ai` deployment:
+
+1. Open the editor and select the `timoto-ai` deployment.
+2. Start a new documentation branch from the current `main` deploy branch. Do not edit a stale branch from an earlier task.
+3. Search for the page before creating one. For a new page, choose a stable kebab-case path and the correct navigation group. Give it a clear title, concise description, and useful search keywords.
+4. Add or revise the MDX body. Use absolute KB links such as `/flows/rider-sell-images`; avoid hard-coding preview URLs.
+5. Add the page to navigation if readers should discover it there. Hidden pages should be intentional and linked from a visible canonical page.
+6. Update nearby index pages when needed so the new material is findable. Do not rewrite unrelated pages or alter site auth, visibility, hostname, or DNS settings as part of a content-only change.
+
+## 7. Validate, review, and publish
+
+Before saving:
+
+- Read the whole edited page back from the editor.
+- Check frontmatter, headings, tables, fenced code blocks, MDX components, and internal links.
+- Confirm every endpoint, response, file path, source line, and test claim has evidence.
+- Review the navigation diff and search for the new title/slug to catch duplicates.
+- Preview the page as a reader. Check that secrets and real customer data are absent.
+
+Then save as a pull request, not as an unreviewed production change. In review, ask an owner of the affected repo/flow to check technical accuracy and a docs maintainer to check discoverability. Merge only after review and required checks. After merge, verify the Mintlify deployment check and the actual private page; a saved PR, successful merge, build, and reachable live page are separate states. If Mintlify reports a hostname/DNS revalidation failure, follow the current Mintlify domain-verification instructions with the domain owner—do not claim the custom domain is live or change DNS without authorization.
+
+## 8. Protect private and sensitive data
+
+Never put these in pages, examples, screenshots, commits, or logs:
+
+- OTPs, passwords, JWTs, API keys, HMAC secrets, signing material, or production credentials.
+- Customer names/phone numbers, payment identifiers, raw database records, private photos, or unredacted support/incident logs.
+- Unreviewed dumps from Postman environments or production systems.
+
+Use fabricated or properly redacted examples. Keep private deployment/auth controls intact. If sensitive material is accidentally committed, treat it as a security incident: notify the owner, rotate/revoke exposed credentials, and follow repository history-remediation procedures.
+
+## 9. Keep the KB current
+
+Update documentation in the same change series as a behavior or contract change whenever practical. Revisit affected pages when routes, schema, state transitions, auth, deployment, or ownership changes. Remove or label stale claims rather than silently preserving conflicting versions. When evidence is incomplete, add a short **Open questions / verification needed** section with an owner and the proof needed to close it.
+
+A good KB change lets the next engineer answer: **what happens, which code proves it, what can fail, how do I verify it, and what must I not assume?**
