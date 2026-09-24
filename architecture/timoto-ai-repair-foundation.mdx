@@ -1,0 +1,341 @@
+---
+title: "TiMoto AI Repair Foundation — seven-folder architecture review"
+sidebarTitle: "AI Repair Foundation"
+description: "Detailed source-grounded map of the seven-folder TiMoto AI repair, observability, and operations-console workspace."
+---
+
+> Review date: **2026-09-23**  
+> Scope: the local AI_infra_timoto workspace and its seven project folders.  
+> Evidence level: source, configuration, documentation, and local test evidence. AWS and external application state were **not re-verified during this review**.
+
+## Executive summary
+
+This workspace is the TiMoto AI incident-repair control plane. It is not the complete Dealer, Internal, or Mobile application source. Those application repositories are external targets referenced by the registry and source broker.
+
+The intended lifecycle is:
+
+**backend 5xx event → exact target resolution → sanitized CloudWatch evidence → SQS and durable incident record → immutable source snapshot → isolated model and test stages → independently verified candidate → signed artifact → GitHub draft PR → Jira and read-only operations console → human approval → operator-controlled deployment and observation**
+
+The design is deliberately approval-gated. A draft PR is not a merge, a merge is not a deployment, and a running ECS task is not proof that an API is healthy.
+
+## The seven folders
+
+| Folder | Primary responsibility | Important contents |
+| --- | --- | --- |
+| docs/ | Architecture, product/runtime references, readiness reports, runbooks | Application reference, six-target map, system reviews, E2E readiness, demo runbook |
+| infra/ | Repair pipeline AWS infrastructure | CloudWatch forwarder, SQS/DLQ, DynamoDB, S3 evidence, ECS task definitions, KMS, GitHub/Jira integrations, alarms |
+| platform/ | Read-only Operations Console | Cognito login, API Gateway JWT routes, Lambda projections/reports, CloudFront static UI |
+| services/ | Isolated runtime containers | Source broker, model runner, test runner, preview runner, publisher, OAuth bootstrap, test images |
+| tests/ | Local contract and regression tests | Intake, controller, dispatch, sandbox, artifact, transport, outbox, OAuth, platform tests |
+| timoto_repair/ | Shared Python control-plane library | Registry, evidence, controller, dispatch, verifier, sandbox, artifacts, publication fences |
+| tools/ | Operator diagnostics and bounded workflows | Six-target smoke, fast synthetic E2E, staging deploy/health/rollback |
+
+## Six registered runtime targets
+
+The authoritative mapping is timoto_repair/registry.py. Routing requires agreement between trusted identity fields; it does not guess from a hostname substring.
+
+| Target | Environment | Host | Repository | Region |
+| --- | --- | --- | --- | --- |
+| dealer-staging | staging | api-dealer-staging.timoto.ai | TimotoDev/timoto-dealer-portal | ap-southeast-7 |
+| dealer-production | production | api-dealer.timoto.ai | TimotoDev/timoto-dealer-portal | ap-southeast-7 |
+| internal-staging | staging | internal.timoto.ai | TimotoDev/timoto-internal-app | ap-southeast-7 |
+| internal-production | production | prod-internal.timoto.ai | TimotoDev/timoto-internal-app | ap-southeast-7 |
+| mobile-staging | staging | api-staging.timoto.ai | TimotoDev/timoto-mobile | ap-southeast-7 |
+| mobile-production | production | api.timoto.ai | TimotoDev/timoto-mobile | ap-southeast-7 |
+
+The control plane itself runs in Singapore (ap-southeast-1). Bangkok log intake is forwarded into the Singapore queue and evidence store.
+
+## Folder 1 — docs/
+
+The documentation folder is the project’s architecture and handoff record.
+
+### Application reference
+
+docs/app-reference/ describes the three external application families:
+
+- Dealer Django/DRF backend plus the separate Dealer v2 React frontend.
+- Internal Django/DRF operations backend, web frontend, and workers.
+- Mobile Django API, React Native client, evaluation/media flows, and realtime events.
+
+The reference explicitly warns that application repositories are independent targets. It calls out important boundaries such as Dealer legacy URL aliases, Internal database routers and write aliases, and Mobile health-path uncertainty.
+
+### Infrastructure and lifecycle documents
+
+The most important operational documents are:
+
+- docs/design.md: approved six-target repair design and safety boundaries.
+- docs/progress.md: chronological implementation and deployment ledger.
+- docs/readiness-2026-09-17.md: required gates before unattended repair.
+- docs/e2e-readiness-2026-09-20.md: recorded live boundary, draft-PR path, and remaining prerequisites.
+- docs/system-review-2026-09-20.md and docs/system-review-2026-09-21.md: review findings and remediation history.
+- docs/demo-fast-runbook.md: staging-only synthetic demonstration procedure.
+- docs/timoto-platform-block-diagram.md: trust boundaries and communication map.
+
+These documents are valuable but time-stamped. They are not a substitute for fresh AWS, GitHub, Jira, or ECS verification before a change.
+
+## Folder 2 — infra/
+
+infra/ is the main Terraform stack for the repair pipeline.
+
+### Intake and evidence
+
+main.tf defines:
+
+- A Bangkok provider alias for source log groups.
+- A Singapore SQS evidence queue and encrypted DLQ.
+- A PAY_PER_REQUEST, encrypted, point-in-time-recoverable DynamoDB incident table.
+- An existing private S3 evidence bucket, written only under controlled prefixes.
+- Forwarder and collector Lambda functions.
+- Per-target CloudWatch subscription filters, enabled only for validated target IDs.
+- A DLQ-visible alarm.
+
+The forwarder accepts only structured API exception or API request 5xx events. It validates CloudWatch ownership, log group, stream prefix, ECS task identity, cluster, service group, and primary container before queuing normalized evidence.
+
+### Dispatch and source handoff
+
+dispatcher.tf and source-handoff.tf provide:
+
+- Durable two-slot reservations.
+- Per-repository exclusion.
+- Frozen ECS RunTask requests and deterministic client tokens.
+- Deadline supervision and ambiguous-launch reconciliation.
+- A separate source-broker launch before model execution.
+- A source-handoff Lambda that promotes one immutable, target-bound snapshot.
+
+Capacity is not released solely because a lease expired. A missing ECS task record remains a reconciliation case.
+
+### Runners and verification
+
+runner.tf and model-runner.tf provision:
+
+- Digest-pinned ARM64 preview, model, and test-runtime task definitions.
+- Separate execution/task IAM roles.
+- A KMS asymmetric signing key.
+- S3 prefixes for snapshots, candidates, results, tests, and artifacts.
+- Secrets Manager access only where the specific task needs it.
+
+The verifier is the authority that validates the candidate and signs the artifact. The model task writes an unsigned candidate and cannot create a PR.
+
+### Publisher, Jira, and observability
+
+- github.tf defines source-broker and GitHub-publisher images, roles, logs, and task definitions.
+- jira.tf defines the scheduled Jira synchronizer.
+- observability.tf defines metric filters, alarms, and the repair dashboard.
+- test-runtimes.tf declares immutable ECR repositories for Dealer, Internal, and Mobile test images.
+
+Current Terraform source configures supervised draft-PR dispatch for staging and production. It does not grant merge or deployment authority to the model or publisher. Production merge/deploy remains a human boundary and must be verified against live configuration before any operational change.
+
+### State and release hygiene
+
+The folder contains Terraform state, backup state, saved plans, and generated ZIP artifacts. These are operational artifacts, not ordinary source files. The workspace is not currently a Git repository, so there is no commit history or clean/dirty status to rely on here.
+
+## Folder 3 — platform/
+
+platform/ is a read-only operations console, separate from the repair workers.
+
+### Backend
+
+platform/backend/app.py:
+
+- Reads incident rows, evidence summaries, receipts, test results, and ECS service observations.
+- Redacts sensitive strings and returns bounded projections.
+- Generates deterministic three-hour reports.
+- Exposes identity triggers for Cognito signup/token checks.
+- Never returns raw request bodies, raw logs, model prompts, patches, or credentials.
+- Does not mutate incidents, launch tasks, merge PRs, or deploy services.
+
+The authenticated API surface is:
+
+- GET /overview
+- GET /incidents/{id}
+- GET /reports
+- GET /reports/{id}
+
+### Infrastructure and frontend
+
+platform/infra/main.tf provisions:
+
+- Private S3 static assets behind CloudFront.
+- Cognito email/password authentication restricted to the company domain.
+- Optional TOTP configuration.
+- API Gateway HTTP API with JWT authorizer and console/read scope.
+- Three small ARM64 Lambdas: API, report generation, and identity triggers.
+- A three-hour EventBridge report schedule.
+- Versioned report storage with bounded retention.
+
+platform/web/ is a dependency-free SPA. It displays overview, incidents, reports, runbook guidance, and explicit limitations. It is intentionally an observation console, not a repair control surface.
+
+## Folder 4 — services/
+
+The services folder contains isolated execution roles. Each container has a narrower authority than the full pipeline.
+
+### Source broker
+
+services/source-broker/broker.py owns the GitHub read credential. It:
+
+1. Requires a full 40-character release SHA.
+2. Reads only the target repository’s backend/ tree.
+3. Applies file, count, size, and archive budgets.
+4. Writes a SHA-bound archive and manifest to private S3.
+5. Emits a bounded blocked receipt on failure.
+
+The source broker never passes its GitHub credential to the model or test task.
+
+### Preview repair runner
+
+services/repair-runner/runner.py is deliberately preview-only. It validates the incident, lease, evidence, source manifest, and archive metadata, then writes a blocked receipt. It does not clone, invoke a model, call GitHub/Jira, mutate DynamoDB, or deploy.
+
+### Model runner
+
+services/model-runner/model_runner.py:
+
+- Restores operator-provisioned Antigravity state through the bootstrap boundary.
+- Reads immutable source and sanitized evidence.
+- Applies an operator-reviewed per-target test contract.
+- Invokes the configured model only inside the guarded task.
+- Restricts model changes to backend Python files.
+- Sends source and candidate archives to the independent test task.
+- Requires a real baseline failure and candidate pass.
+- Writes an unsigned candidate payload or a blocked receipt.
+
+The synthetic drill fallback is marked separately as repair_origin=drill_fallback; it must not be presented as proof of a new autonomous diagnosis.
+
+### Test runner
+
+services/test-runner/test_runner.py is an untrusted-code task with no Secrets Manager, KMS, DynamoDB, GitHub, Jira, or model credentials. It:
+
+- Downloads immutable source and candidate archives.
+- Rejects unsafe archive members and traversal.
+- Runs the approved command on both source and candidate.
+- Executes the selected regression explicitly.
+- Distinguishes setup/import failures from assertion failures.
+- Writes a bounded test receipt to S3.
+
+### Publisher and OAuth bootstrap
+
+- services/github-publisher/publisher.py is the signed-artifact to GitHub draft-PR boundary. It does not merge, dispatch workflows, or deploy.
+- services/oauth-bootstrap/login.py is an operator-only ECS Exec persistence helper. It is restricted to authentication and usage verification, not coding prompts.
+- entrypoint.sh files restore state and start the bounded runtime process.
+
+## Folder 5 — timoto_repair/
+
+This is the shared Python library and the most important source folder.
+
+| Module | Responsibility |
+| --- | --- |
+| registry.py | Exact six-target identity and repository mapping |
+| intake.py | Sanitized evidence normalization and strict envelope validation |
+| aws_intake.py | CloudWatch decode, ECS source validation, SQS forwarding, S3/DynamoDB collection |
+| control.py | Local SQLite reference lifecycle, approvals, verification, rollback receipts |
+| dispatch.py | DynamoDB reservations, repository locks, frozen ECS launch requests, supervision |
+| source_handoff.py | Immutable source-manifest promotion |
+| execution.py | Repair contract, model command, patch and result gates |
+| sandbox.py | Local offline process/container isolation primitive |
+| regression.py | Independent baseline/candidate selected-unittest observer |
+| artifacts.py | Signed artifact schema, identity binding, path and size budgets |
+| verifier.py | Independent result/artifact fence and publisher dispatch |
+| transport.py | Fixed-host, bounded, TLS-verified HTTP transport |
+| integrations.py | Trusted GitHub/Jira adapters and durable publication facade |
+| outbox.py | One-attempt publication fence for uncertain external writes |
+| jira_sync.py | DEV-project incident creation, comments, and transitions |
+| jira_lifecycle.py | Approval-aware Jira state adapter |
+| oauth_store.py, keyring_store.py, cli_state_store.py | Bounded, private Antigravity state persistence |
+
+The shared safety pattern is fail closed: malformed identity, missing provenance, stale leases, invalid receipts, unsafe paths, unknown test outcomes, and ambiguous writes become blocked or reconciliation cases instead of simulated success.
+
+## Folder 6 — tests/
+
+The test suite is organized around contracts rather than a full copy of every external application.
+
+Current test files cover:
+
+- test_aws_intake.py: CloudWatch envelope validation, spoof rejection, S3-before-DynamoDB ordering, duplicates, and partial-batch behavior.
+- test_core.py: registry, normalized evidence, controller lifecycle, approval, verification, and rollback.
+- test_dispatch.py: two-slot capacity, repository locks, retries, ambiguous ECS launches, deadlines, and stopped-task handling.
+- test_execution.py: model/test contract and backend-only patch policy.
+- test_artifacts.py: signed payload identity, path safety, change budgets, and test claims.
+- test_regression.py and test_regression_live.py: baseline failure/candidate pass and independent test identity checks.
+- test_sandbox.py and test_sandbox_live.py: no-network, non-root, read-only source, capability, timeout, and cleanup behavior.
+- test_transport.py: TLS, fixed destinations, redirect handling, bounded responses, and no blind POST retries.
+- test_outbox.py: durable publication reservations, uncertain writes, cached receipts, and duplicate prevention.
+- test_oauth_bootstrap.py and test_keyring_store.py: bounded credential-state persistence without leaking tokens.
+- test_platform.py: Cognito domain/verification gates, read-only API behavior, report retry logic, and Terraform permission boundaries.
+- test_integrations.py and test_jira_sync_details.py: external adapter contracts and operator-readable incident details.
+
+Local verification performed for this update:
+
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
+
+Result: 161 passed, 11 skipped.
+
+The skipped tests are live/Docker-dependent checks. A passing local suite is not proof of a live six-target Django test matrix or a successful real model repair.
+
+## Folder 7 — tools/
+
+The tools are operator-facing and should not be called by the model as an authority.
+
+- six_target_smoke.py performs read-only repository shape, ECS steady-state, HTTPS reachability, and test-contract preflight checks.
+- demo_fast_e2e.py creates one synthetic staging incident, shortcuts scheduled waits, and exercises source handoff, model/test stages, verifier, publisher, and Jira. It is a staging drill, not production repair evidence.
+- staging_deploy.py requires a short-lived approval file, staging target, expected current task definition, new task definition, and HTTPS health check. It attempts rollback if the deployment or health gate fails.
+
+The tools preserve an important operational distinction: a health URL returning 200 does not prove the deployed release matches the approved artifact or that the original error disappeared.
+
+## State and trust boundaries
+
+A normal incident moves through these conceptual states:
+
+QUEUED → READY / LAUNCHING / RUNNING → RESULT_PENDING → BLOCKED or ARTIFACT_READY → PR_PENDING → AWAITING_APPROVAL → DEPLOYING → VERIFYING → RESOLVED or ROLLBACK_REQUIRED
+
+Not every state is a success claim:
+
+- QUEUED: evidence accepted; no repair claimed.
+- RUNNING: a bounded task exists; no result accepted.
+- RESULT_PENDING: worker stopped or receipt is awaiting reconciliation.
+- BLOCKED: a required gate failed or evidence was insufficient.
+- ARTIFACT_READY: candidate passed the verifier’s artifact/test contract.
+- AWAITING_APPROVAL: a draft PR exists and awaits human review.
+- RESOLVED: deployment observation met the configured evidence window.
+- ROLLBACK_REQUIRED: observation detected drift or matching failures.
+
+## Current implementation status
+
+### Implemented in source and locally tested
+
+- Exact six-target registry and sanitized 5xx intake.
+- SQS/DynamoDB/S3 evidence pipeline definitions.
+- Durable launch reservations and repository locks.
+- Source SHA and archive binding.
+- Isolated test runner contract with baseline-versus-candidate comparison.
+- Independent artifact verification and KMS signing boundary.
+- GitHub draft-PR and Jira adapters with publication fences.
+- Read-only operations console and deterministic reports.
+- Operator-only staging deployment/rollback adapter.
+
+### Recorded or configured, but not freshly re-verified here
+
+- AWS Lambda, ECS, ECR, S3, DynamoDB, KMS, EventBridge, GitHub, and Jira live state.
+- Six CloudWatch source subscriptions and ECS service steady state.
+- Production draft-PR dispatch configuration.
+- Antigravity OAuth persistence and model catalog availability.
+- Existing draft PRs, Jira issues, and report history.
+
+### Remaining gates
+
+1. Complete one genuine staged repair per application family with the exact deployed source SHA.
+2. Execute each pinned ARM64 test runtime against a real immutable snapshot and verify imports, settings, discovery, and disposable database behavior.
+3. Reconcile model, test, verifier, and publisher failures to bounded terminal receipts with exercised alerts.
+4. Verify branch protections, CI behavior, artifact ancestry, and the approved deployment revision.
+5. Keep production merge/deploy human-approved and rehearse rollback with a fresh approval receipt.
+6. Put this infrastructure under version control before treating Terraform state and local plans as a release record.
+
+## Source-of-truth rules
+
+When documents, local configuration, and live infrastructure disagree:
+
+1. Treat the exact deployed task definition/image digest and authenticated AWS read as runtime truth.
+2. Treat the immutable source SHA and artifact manifest as repair provenance.
+3. Treat Terraform plans as intended changes, not proof of application.
+4. Treat Jira/PR links as recorded integrations, not proof of current external status.
+5. Keep implemented, tested, committed, pushed, deployed, live, and blocked separate.
+
+For the product-level architecture, continue with [Big picture](/architecture/big-picture) and [Data, AI, infra](/architecture/data-ai-infra). For the operational repair lifecycle, use this page as the workspace handoff.
