@@ -8,6 +8,16 @@ description: "Aurora, Cognito, gRPC AI, Gemini OCR, pg_notify, NLB"
 
 Shared **Aurora Postgres** is the system of record for bikes, evaluations, pickups, and dealer orders. Redis is optional cache. Rider identity is **Cognito**. OPS identity is **internal JWT** (phone/password), not Cognito. AI evaluate is a **separate ECS gRPC service**, not TiMoto-AI-Web. OCR cavet is **Gemini** on the mobile Django API.
 
+## Seven-project boundary
+
+The application/data plane is six repositories. The seventh root, `AI_infra_timoto`, is an incident-repair and read-only operations control plane. It consumes CloudWatch evidence from six registered backend targets, stores bounded incident state in DynamoDB/S3, and may produce a signed GitHub draft PR. It does not own Aurora business rows, does not receive customer media as model context, and does not merge or deploy production.
+
+The Chotot pipeline is intentionally separate: `chotot-xe-may` and its S3 exports are research data, not an implicit FMP/TIPP source and not a transactional mirror. The nested `chototcaodulieu/ai-infra` decision selects ECS/Fargate plus n8n Cloud for future agent orchestration; the historical `openclaw/` Terraform is not an active application dependency.
+
+## Region and deployment truth
+
+The repair-control Terraform uses `ap-southeast-1` for its control plane and registers application targets in `ap-southeast-7`. Repository docs contain conflicting ECS/NLB/ALB names and historical EKS instructions. Treat those as hypotheses until the exact AWS task definition, service, target group and release SHA are re-queried for the incident.
+
 ## Databases
 
 | Store | Who writes | Who reads |

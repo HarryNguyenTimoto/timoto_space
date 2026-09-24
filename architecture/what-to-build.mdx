@@ -6,7 +6,20 @@ description: "Ordered gaps and Monday start for any role"
 
 ## Summary
 
-If you only read one page after the [big picture](/architecture/big-picture), read this. It is the **build list** from code gaps, not a wishlist.
+If you only read one page after the [big picture](/architecture/big-picture), read the [Seven-project specification](/architecture/seven-project-spec) first, then use this page as the **build list** from code gaps. This is not a wishlist: each item below is tied to a source path or an observed cross-project contract.
+
+## Deep-dive findings from the seven project roots
+
+| Priority | Project | Source-grounded gap | Required completion evidence |
+| --- | --- | --- | --- |
+| P0 | Dealer backend | Auth documentation includes a fixed/development confirmation-code path; payment and auction paths need production concurrency/idempotency proof. | Remove the development path from production; add PostgreSQL concurrency tests; prove duplicate VietQR callbacks are harmless. |
+| P0 | Mobile backend | Presigned upload and evaluation paths cross auth, S3, gRPC and PostgreSQL notification boundaries; SQLite tests cannot prove those boundaries. | Authenticated object ownership, replay tests, gRPC contract fixture, and PostgreSQL integration evidence. |
+| P0 | Internal app | FMP submit snapshots listing/TIPP, but cross-database mirrors, `user_db_write`, worker delivery and payout callbacks are separate failure domains. | One end-to-end staging trace with IDs, HMAC verification, outbox/consumer state, payout receipt and rollback procedure. |
+| P0 | AI infrastructure | Dispatcher/source/model/verifier/publisher are configured, but production merge/deploy remains a human gate and several AWS facts are historical. | Fresh six-target smoke, exact task-definition/image evidence, repeated staging run, signed artifact and operator approval record. |
+| P1 | Dealer v2 | Build-time `VITE_*` values and Axios route declarations are client expectations, not proof of reachable backend routes. | Staging browser trace for auth, catalog, order, auction, payment and AI-report flows against the deployed frontend image. |
+| P1 | AI Web | Android waitlist UI currently acknowledges locally; the documented Lambda contract is not called by the current landing form. | Wire API Gateway/Lambda with CORS, conditional deduplication, rate limiting and an actual browser acceptance test—or remove the backend claim. |
+| P1 | Chotot data | Daily/weekly scraping and image sync are isolated DynamoDB/S3 pipelines; older narrative suggested proxy rotation and direct pricing use. | Keep Aurora isolation explicit, document no proxy pool, and publish a freshness/quality report with checkpoint recovery evidence. |
+| P2 | Whole system | Source docs, deployment docs and task names disagree across repositories. | One release manifest per environment: commit, image digest, task definition, host, migration mode, test result and owner. |
 
 ## Ship this sprint (testing plan §8)
 

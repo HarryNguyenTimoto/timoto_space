@@ -1,0 +1,84 @@
+---
+title: "Response Contracts and Evidence"
+sidebarTitle: "Response/error spec"
+description: "Source-extracted route inventory with concrete method, handler ownership, response branch, and error evidence."
+---
+
+# Response Contracts and Evidence
+
+## Contract truth
+
+The seven projects do not share one response wrapper. A response specification must come from each view, serializer, test and client. This page defines how to publish exact contracts without turning expectations into false implementation claims.
+
+## Evidence hierarchy
+
+1. Test assertion for status and body.
+2. Concrete handler return branch and serializer.
+3. Frontend type and error handling (client expectation only).
+4. Postman response captured in a particular environment/time.
+5. Architecture prose (intent/history, not runtime truth).
+
+Record source commit, file path, symbol and inspection date for every endpoint family. Label observed response, inferred response and proposed standard separately.
+
+## What every endpoint page records
+
+- HTTP method, path, version and configured host.
+- Authentication, role and object-ownership checks.
+- Query and request body schema, requiredness, nullability and limits.
+- Success status, Content-Type, exact JSON keys or empty/file/redirect semantics.
+- List ordering, pagination format and supported filters.
+- Error status, exact body and stable machine code.
+- Database writes, external calls and emitted events.
+- Idempotency key, timeout ambiguity and safe retry behavior.
+- Correlation header and the test that locks the contract.
+
+## Error classification vocabulary
+
+| Status | Common meaning | Client action | Evidence to inspect |
+| --- | --- | --- | --- |
+| 400 | malformed input or domain validation | fix fields; don't repeat same body | serializer errors and custom validation |
+| 401 | missing/invalid/expired identity or signature | refresh once when supported; authenticate callback correctly | authentication class and verifier |
+| 403 | role or ownership denied | stop retrying; show authorization issue | permissions and queryset scoping |
+| 404 | absent resource or route/base URL mismatch | distinguish unknown ID from wrong service | object lookup and route resolver |
+| 409 | duplicate operation or invalid state transition | fetch canonical state and reconcile | transition guard/idempotency branch |
+| 413 | media too large | reduce/re-encode or use supported upload | gateway/view limits |
+| 415 | unsupported media type | correct content type/format | parser and serializer |
+| 422 | semantic invalidity if emitted by gateway | fix request; no blind retry | framework/gateway mapping |
+| 429 | OTP/provider throttling | honor Retry-After/backoff | throttle and provider mapping |
+| 500 | unhandled service failure | retry idempotent reads only | error handler and correlation |
+| 502/503/504 | upstream unavailable/timeout | bounded retry and state reconciliation | provider timeout handling |
+
+These statuses are a shared classification vocabulary, not a claim every repository returns each status. Endpoint reference must preserve the actual status/body branch.
+
+## Success status semantics
+
+- 200 on a POST does not prove persistence without checking the write path.
+- 201 means the handler created a resource if that is what the code returns; it does not prove an async job finished.
+- 202 means accepted or queued; poll the persistent operation.
+- 204 has no JSON body.
+- 302/browser payment return is navigation, not settlement.
+- 2xx webhook acknowledgement confirms receiver acceptance only; downstream processing may remain pending.
+- PDF/media responses need Content-Type, filename, authorization and bounds.
+- Timeout leaves the result ambiguous. Read by stable operation/payment/event key before retrying.
+
+## Error body safety
+
+A client-facing error can include request_id, stable error code, safe message, field-level errors, retryable flag and a support reference. Do not expose stack traces, SQL, JWT/refresh token, OTP, HMAC signature, bank data, presigned query strings or unfiltered upstream responses. Logs should contain route template, service, environment, release SHA, status, fingerprint and correlation ID.
+
+## Current per-project contract notes
+
+- timoto-mobile: async evaluation returns pending state then a later result; websocket is notification, REST result is canonical. Handler error bodies vary by route.
+- timoto-internal-app: a pricing write can commit before mobile outbox delivery; reconcile outbox and don't create a second offer.
+- timoto-dealer-portal: checkout/QR/redirect are instructions or status; signed callback/IPN owns settlement.
+- timoto_dealer_portal_v2: TypeScript types describe what the UI expects. The Django serializer remains authoritative for actual server schema.
+- TiMoto-AI-Web: local form alert is not an HTTP response and current form code does not persist waitlist data.
+- chototcaodulieu: Lambda 200 means invocation returned; counters/checkpoint and record-level quality determine data completeness.
+- AI_infra_timoto: BLOCKED and RESULT_PENDING are valid incident protocol states. They are not HTTP API success/failure codes.
+
+## Contract test checklist
+
+For every endpoint test anonymous request, valid identity, wrong role, wrong owner, valid body, missing required field, malformed type, nonexistent resource, illegal transition, duplicate retry and provider timeout. Assert exact status, JSON keys, content type and whether a DB write occurred. For callbacks, test signature mismatch, replay, amount mismatch, unknown local reference and duplicate delivery.
+
+## Proposed envelope (not currently universal)
+
+Future APIs could converge on an envelope with request_id, data/meta on success and request_id plus error.code/message/fields/retryable on failure. This is a design proposal only. Adoption needs versioned migration, compatibility period, frontend updates and contract tests; do not document it as current behavior.

@@ -1,0 +1,68 @@
+---
+title: "Complete Endpoint and Flow Catalog"
+sidebarTitle: "Complete endpoint catalog"
+description: "Detailed seven-project feature flows, route inventory, response taxonomy, and error handling contract."
+---
+
+# Seven-Project Specification Library
+
+This page is the entry point to the source-level TiMoto specification. The codebase chapters and route ledgers below supersede older compact API summaries whenever their path or behavior differs.
+
+## Codebase deep dives
+
+| Project | Implementation deep dive | Main contents |
+| --- | --- | --- |
+| timoto-mobile | /deep-dives/mobile-codebase | React Native architecture, Django domain model, intake, OCR, media, async evaluation, realtime operator review, marketplace, pickup, auth, route drift |
+| timoto-internal-app | /deep-dives/internal-codebase | Staff queue, FMP pricing, snapshots, outbox, pickup, sale, purchase, payout callback, roles |
+| timoto-dealer-portal | /deep-dives/dealer-codebase | Combo catalog, dealer orders, auctions, checkout, QR, VietQR/VNPay, receipts |
+| timoto_dealer_portal_v2 | /deep-dives/dealer-v2-client | Client routes/types, auth, order UI, API base configuration, backend mapping |
+| TiMoto-AI-Web | /deep-dives/ai-web-codebase | Landing page, device routing, local-only form behavior, hosting |
+| chototcaodulieu | /deep-dives/chotot-codebase | Listing/detail collection, DynamoDB, refresh checkpoints, image queue, export, dashboard |
+| AI_infra_timoto | /deep-dives/ai-infra-codebase | Trusted intake, target registry, leases, source SHA, isolated test, KMS artifact, draft PR boundary |
+
+## Route ledgers and response specification
+
+- /apis/mobile-route-ledger: exact Django route mounts and backend/frontend drift.
+- /apis/internal-route-ledger: exact /api route paths and command/read classification.
+- /apis/dealer-route-ledger: v1 and compatibility prefixes, callback paths and payment routes.
+- /apis/response-contracts-evidence: success/error status semantics, evidence hierarchy, retry and privacy rules.
+- /apis/mobile-feature-contracts: onboarding, OTP, media, async evaluation, realtime, marketplace and pickup contracts.
+- /apis/ops-state-contracts: OPS valuation, outbox, pickup, sale and payout transitions.
+- /apis/dealer-payment-contracts: checkout, QR, callback/IPN, receipt and reconciliation protocol.
+- /apis/exhaustive-api-matrix: compact cross-project summary only; consult source route ledgers for exact path.
+
+## Cross-system flow map
+
+1. Rider creates bike, uploads media, submits evaluation and sees async result.
+2. Seller opens operator review; OPS prices with snapshot rates, emits an outbox event and mobile reads the persisted result.
+3. Seller chooses listing/instant path; marketplace read model derives eligibility and presentation.
+4. Pickup, sale and purchase states are separate transitions. A notification is not a state transition.
+5. Dealer chooses grouped Combo or auction item, creates checkout, receives QR instructions, then provider callback settles payment.
+6. Chotot scraper stores external market advertisements and exports; these records are not TiMoto transaction inventory.
+7. Backend 5xx evidence enters AI control plane, gets bound to target and commit, verified, signed and published as draft PR. Human controls merge and deployment.
+
+## Evidence labels
+
+- Code route: declared by URL resolver.
+- Client route: called or typed by frontend; backend implementation must be located.
+- Source behavior: handler/serializer/model behavior found in repository.
+- Environment verified: same target/environment request or deployment evidence observed.
+- Proposal: future contract or safety improvement, not current implementation.
+
+Every endpoint row should carry its evidence label. A code route does not prove deployment; a client type does not prove server support; a 2xx response does not prove the intended durable state.
+
+## Reconciliation and migration priorities
+
+| Priority | Work | Pass evidence |
+| --- | --- | --- |
+| P0 | Resolve mobile marketplace purchase/payment routes called by frontend but absent from inspected mobile Django URL modules | Owner service identified; route resolver and same-environment request agree |
+| P0 | Ensure dealer callback and browser return cannot both settle one payment | Signed callback replay/race test and one durable settlement |
+| P0 | Preserve AI runner/publisher separation and explicit human deployment approval | IAM/task definition and signed artifact review |
+| P1 | Generate frontend-to-backend route diff on release | All client calls map to resolver or explicitly external service |
+| P1 | Publish exact response body for auth, OTP, valuation and payment commands | Tests assert status/content type/body |
+| P1 | Clarify which React Native app tree is shipped | CI workflow and deployed bundle SHA identify Apps or TiMotoAI |
+| P2 | Version shared error envelope if desired | Migration plan, compatibility tests, client rollout |
+
+## Reading order
+
+Start with Cross-System Flows and Contracts, then each app page, then the route ledger for the backend. Use Response Contracts and Evidence when adding examples. Use existing Postman pages only as captured examples with their environment and timestamp, not as route authority.

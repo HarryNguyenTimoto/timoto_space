@@ -1,0 +1,116 @@
+---
+title: "Deep Dive: Cross-System Flows and Contracts"
+sidebarTitle: "Cross-system deep dive"
+description: "Code-derived end-to-end flows, data contracts, failure semantics, observability, and migration plan across all seven roots."
+---
+
+# Deep Dive: Cross-System Flows and Contracts
+
+## Seven roots and their links
+
+| Producer | Consumer | Contract type | Source of truth |
+| --- | --- | --- | --- |
+| timoto-mobile | timoto-internal-app | New submission webhook / mirrored DB | Mobile bike and OPS mirror/outbox status |
+| timoto-internal-app | timoto-mobile | Operator offer/completion HMAC event | OPS pricing/outbox and mobile evaluation rows |
+| timoto-internal-app | timoto-dealer-portal | Eligible purchased bike/catalog publication | Sale transaction and dealer catalog combo |
+| timoto-dealer-portal | payment provider | Checkout create + callback/IPN | Local checkout/payment row after verified provider callback |
+| Chotot pipeline | Market dashboard/export | DynamoDB/S3 objects and checkpoints | Source listing ID, raw payload, refresh timestamp |
+| TiMoto-AI-Web | Mobile store links | External navigation | App Store / public page, no backend user data |
+| App backend 5xx streams | AI_infra_timoto | Sanitized evidence events | Trusted CloudWatch source + immutable release SHA |
+| AI_infra_timoto | GitHub | Signed artifact, repair branch, draft PR | Independent verifier + publication receipt |
+
+These are not one shared database or one authentication scheme. Each edge must record origin, target, credential, durable id, retries, idempotency, and reconciliation owner.
+
+## Flow A: seller evaluation through OPS
+
+1. Rider authenticates and creates bike.
+2. Vehicle registration OCR and media uploads enrich draft.
+3. User submits assessment; backend stores bike/media/evaluation data.
+4. Async evaluator returns pending and later stores result.
+5. Rider requests operator review; a request row and correlation ID are created.
+6. Client opens realtime connection; operator review completes in OPS.
+7. OPS persists valuation/rate snapshot and enqueues completion event.
+8. OPS emits signed completion to mobile; mobile persists review outcome; websocket signals result ready.
+9. Client fetches REST result and displays normalized price options.
+10. Client saves seller selection (listing vs instant); backend resolves authoritative numbers.
+11. Listing confirmation/status or instant path now becomes the source of truth.
+
+Failure recovery: after any timeout, GET canonical bike/result/request state before retrying POST. A socket event can be lost; REST lookup recovers. A completed OPS write with failed mobile notification is an outbox retry, not a reason to create a second offer.
+
+## Flow B: listing, purchase intent, pickup and internal sale
+
+Mobile marketplace read model projects bike, media, evaluation, pricing and pickup information. Buyer contact or buy-intent endpoints create lead/intent rows. Listing and sale domains should distinguish interested buyer, accepted buyer, scheduled pickup, custody transfer, sale pending and sale complete. Internal buyer-found callback is HMAC protected and must be tied to a specific seller listing UUID. Pickup complete and sale complete are separate facts.
+
+Mobile frontend currently calls purchase-order/payment route names not found in backend/apps/bikes/urls.py. This is an explicit cross-root integration gap unless another service owns them. Do not tell users end-to-end checkout is implemented from client screens alone. Resolve owner and environment before integrating.
+
+## Flow C: dealer auction/payment
+
+1. Dealer account starts OTP auth; catalog query uses dealer/public projection.
+2. Dealer selects combo (grouped inventory) and creates an order/auction action.
+3. Payment create creates a local checkout with expected amount and merchant reference.
+4. QR/browser redirect only communicates payment instructions.
+5. Provider callback verifies signature, merchant, order/checkout, amount/currency and idempotency.
+6. Durable paid state drives order action flags, receipt generation and delivery.
+7. Dealer app reloads canonical order after callback; notification is secondary.
+
+Failure handling: 401 triggers auth policy; 403 indicates dealer scope; 404 checkout/order mismatch; 409 is terminal or duplicate transition; provider 5xx leaves payment pending; callback timeout triggers reconciliation by provider transaction ID. Do not create a new checkout until current checkout has been read.
+
+## Flow D: market-data collection
+
+Daily scraper reads listing pages, enriches detail, upserts raw records in DynamoDB. Weekly refresh scans keys from a persisted LastEvaluatedKey, refreshes detail, updates counters and chains itself if time expires. Image jobs travel through SQS to S3. Exports combine snapshot and current source, then upload and may invalidate CDN.
+
+The source timestamp, scrape observation timestamp, refresh timestamp, export creation time and CDN propagation time are separate clocks. Consumers should use freshness metadata and quality indicators, never assume an export matches current source at download time.
+
+## Flow E: incident repair
+
+Backend observability emits 5xx evidence with route template/status/release SHA. Trusted CloudWatch bindings map source to one exact target. Intake redacts and deduplicates. Source broker checks out immutable SHA. Runner must reproduce with a regression, apply backend-only patch in isolated runtime, run allowed tests. Independent verifier binds result and signs artifact. Publisher creates draft PR. Human review/merge/deploy are separate.
+
+Important truth labels: received != root cause found; task started != code tested; tests passed != fix valid; artifact signed != PR exists; PR created != merged; merged != deployed; health green != original incident resolved.
+
+## Shared API response guidance
+
+There is no shared cross-repo envelope. Each project has its own DRF configuration, view response helpers and provider adapters. A proposed common transport model for future contracts:
+
+- success: request_id, data, meta;
+- error: request_id, error.code, error.message, error.fields, retryable; but migration requires compatibility and clients first. Do not claim it is already implemented.
+
+At minimum, any public contract should specify HTTP status, Content-Type, exact JSON fixture, auth scheme, pagination, stable error code, retry safety, idempotency key, correlation header, and ownership checks.
+
+## Cross-system error matrix
+
+| Failure | Visible response | Durable state | Safe retry/reconcile |
+| --- | --- | --- | --- |
+| Mobile evaluation timeout | pending/timeout state | evaluation job/result row | GET result; do not create another bike |
+| WebSocket missed | no push event | operator/result record remains | REST GET and reconnect |
+| OPS completion hook failure | OPS command may be committed | outbox pending/failed | retry same event; no duplicate price |
+| Buyer-found bad signature | 401/403 | no state change | alert integration owner; do not bypass |
+| QR created, callback absent | pending payment | checkout exists | poll status/provider reconciliation |
+| Duplicate bank callback | accepted idempotently or 409 | one paid transition | return prior result |
+| Chotot page rate limit | run partial/retry | checkpoint persists | bounded backoff/resume |
+| SQS image failure | message retries/DLQ | listing record stays | replay image message |
+| AI runner cannot pin SHA | blocked | incident preserved | obtain trusted deployment SHA |
+| AI publisher response ambiguous | publication pending | reservation/receipt reconciled | query PR/branch before retry |
+
+## Data ownership and identity
+
+- Mobile bike UUID identifies a seller vehicle; masked ID is presentation.
+- SellerListing UUID and OperatorReviewRequest ID identify different workflows.
+- Dealer combo UUID groups inventory; it is not a mobile bike ID.
+- Dealer order UUID, checkout UUID, provider transaction ID are separate payment identities.
+- Chotot list_id identifies external advertisement and must not be treated as TiMoto inventory ID.
+- AI incident ID is a digest over trusted source, route/method/time bucket; it is not an application user or bike ID.
+
+## Trace and privacy contract
+
+Propagate request/correlation IDs across HTTP and webhook boundaries. Include source service, release SHA and event ID where possible. Redact Authorization, cookies, HMAC signatures, bank fields, phone/email, presigned query params, raw ad payloads and full request bodies. Use stable pseudonymous IDs for joins where needed. Retention differs by operational evidence, payment records and scraped public listings; define owner and TTL for each store.
+
+## System acceptance
+
+- Validate producer and consumer against the same fixture schema.
+- Exercise duplicate and timeout retry on every event/write boundary.
+- Verify that user identity and object ownership survive all hops.
+- Confirm every callback authenticates before mutation.
+- Reconcile DB record with downstream event and UI state.
+- Run a cross-repo route inventory comparing frontend calls with Django resolver.
+- Mark deployed/live only with environment-specific request/response evidence.
+- Record source commit SHA and docs review date with each contract.

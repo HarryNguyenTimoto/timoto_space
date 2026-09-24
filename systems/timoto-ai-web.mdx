@@ -8,7 +8,7 @@ description: "Public landing only — not the evaluate engine"
 
 **TiMoto-AI-Web** is the public marketing landing (hero, steps, App Store CTAs). Routes: `/` and `/landingpage`. It does **not** run evaluate. Contact form currently logs to console. `VITE_API_BASE_URL=https://dealer.timoto.ai/api` in env is **unused by the UI**.
 
-Waitlist Lambda exists only as `infrastructure/waitlist/.build/` (DynamoDB, CORS `timoto.ai`). Landing page is **not connected** to it.
+A separately documented waitlist Lambda contract exists (DynamoDB, phone/email GSIs, CORS for `timoto.ai`), but the current checked-in landing code does **not** call it. Treat the Lambda deployment/source location as an external verification item, not as proof of a working waitlist.
 
 Likely served as ECS `timoto-landing` behind `timoto.ai`. Real AI is `timoto-ai-service` on the mobile cluster.
 

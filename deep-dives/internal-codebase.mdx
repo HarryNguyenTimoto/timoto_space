@@ -1,0 +1,167 @@
+---
+title: "Deep Dive: timoto-internal-app Codebase"
+sidebarTitle: "Codebase deep dive"
+description: "Code-derived OPS workflows, valuation, pickup, purchase, auth, webhooks, and operational state."
+---
+
+# Deep Dive: timoto-internal-app Codebase
+
+## Repository boundary
+
+Root: /Users/toannguyen/timoto-internal-app. The Django API is mounted at /api/ through backend/config/urls.py and backend/bikes/api_urls.py. The React Native/OPS clients are present under apps/; deployment scripts and app docs are separate concerns. This backend is an operations state machine over seller submissions, valuations, pickup, purchases and sale completion. It also mirrors state to the mobile database and invokes TiMoto mobile callbacks.
+
+## Architecture map
+
+| Domain | Primary implementation | Data/side effect |
+| --- | --- | --- |
+| API routing | backend/bikes/api_urls.py | URL to APIView mapping |
+| Bike and purchase entities | backend/bikes/models.py | Bike, BikeEvaluationResult, TmaOperatorReviewRequest, BikePickupSchedule |
+| Queue and dashboard | backend/bikes/domain.py, ops_api.py | Eligibility, sorting, SLA and status projection |
+| FMP submission | backend/bikes/submissions_api.py | Operator input and persistence |
+| Pricing math | backend/bikes/tipp_pricing.py | Snapshot rates and instant/list prices |
+| TMA synchronization | backend/bikes/realtime_bridge.py, tma_client.py | Outbox events, HMAC/mobile calls |
+| Vehicle sale state | backend/bikes/sale.py, sales_api.py | Pending, completed, failed, marketplace publish |
+| Pickup operations | backend/bikes/pickups_api.py | Inspection and pickup transitions |
+| Purchase operations | backend/bikes/purchases_api.py | Bank, inspection, deposit, pickup, notary, remaining payment |
+| Authentication | backend/bikes/auth_views.py, permissions | Staff JWT, role and object checks |
+| Observability | backend/timoto/observability.py | Structured request/error records and fingerprints |
+
+## Main operational lifecycle
+
+### Submission intake
+
+A mobile submission is created in the mobile database. An internal callback /api/webhooks/tma/new-submission/ can announce it. The receiver authenticates the configured shared-secret/HMAC contract and creates/updates an OPS-facing mirror or queue record. Duplicate callbacks need stable event identity. A failed callback must be retried or reconciled; do not present mobile "submitted" as proof OPS has seen it.
+
+### Operator pricing
+
+Queue eligibility is computed, not simply all bikes. domain.py excludes terminal or otherwise ineligible IDs, maps sale/review/pickup states, calculates SLA, and formats queue rows. The operator opens a submission, reads bike/pricing context and optional AI review decision/report, enters pricing, then submits or rejects.
+
+tipp_pricing.py stores/uses rate snapshots. Instant and listing price are separate derived amounts, so later configuration changes must not silently rewrite accepted offers. The submit path persists the operator decision, resolves SLA, and creates a mobile completion event. The latter is queued via UserCompletionOutbox and emitted with claim/lease handling; failed delivery is retriable and bounded. A green OPS response means the internal write succeeded, not that the rider app received its notification.
+
+### Pickup and vehicle lifecycle
+
+Pickup operations are separate from seller request:
+
+- mobile creates schedule;
+- internal operator sees list/detail;
+- inspection records condition/results;
+- picked-up records custody handoff;
+- complete/reject closes the pickup path;
+- completion creates or reconciles BikeSaleRecord;
+- sale is marked pending before final complete/fail. The sale helper prevents illegal transitions using SaleTransitionError. Completing sale also publishes eligible gas bikes to dealer catalog behind dealer_catalog_auto_publish_enabled. That toggle is a consequential integration boundary: publish only after sale transition validation and transaction success.
+
+### Purchase and payout lifecycle
+
+purchases_api.py builds operator-focused list/detail projections with a computed purchase step and appointment fields. Commands record bank verification, inspection pass, deposit pay, pickup confirmation, notary confirmation, remaining payment, complete, or reject. The bank payout webhook is a provider-to-OPS trust boundary and must verify signature, local bike/purchase identity, amount and replay before advancing state. GET status and dashboard projections are not command endpoints.
+
+## Route inventory
+
+All paths below are prefixed /api. Exact methods are determined by each APIView class in backend/bikes/\*\_api.py.
+
+| Route | Handler family | Contract class |
+| --- | --- | --- |
+| / | ApiRootView | Public API index |
+| /health/ | HealthCheckView | Readiness/liveness, inspect dependencies |
+| /schema/, /docs/ | OpenAPI and Swagger | Internal schema surface |
+| /auth/login/, /auth/refresh/, /auth/logout/ | JWT auth | Token lifecycle |
+| /auth/zalo/native and /auth/zalo/internal-login aliases | Internal Zalo login | Social auth |
+| /auth/register-fcm-token aliases, /auth/me/ | Push registration/profile | Authenticated user state |
+| /admin/staff/, /admin/staff/:user_id/, /reset-password/ | Staff administration | Admin-only CRUD/action |
+| /webhooks/tma/new-submission/ | TMA callback | HMAC/webhook; idempotent receiver |
+| /webhooks/bank/payout/ | Bank callback | Provider signature and payout state |
+| /v1/mobile/operator-offer and alias | Mobile offer read | Signed/internal service call |
+| /submissions/, /:bike_id/ | Queue and detail | Staff role; filtered read |
+| /submissions/:bike_id/pricing/ | Pricing context | Staff read |
+| /submissions/:bike_id/ai-review-choice/ | AI review choice | Persist operator choice |
+| /submissions/:bike_id/ai-report/ | AI report | Read-only report |
+| /submissions/:bike_id/submit/ | Submit price | Mutating, snapshot+outbox |
+| /submissions/:bike_id/reject/ | Reject price | Mutating terminal/return path |
+| /submissions/:bike_id/success/ | Success projection | Read-only |
+| /notifications/, /read-all/, /:id/read/ | Notification state | Staff read/mark-read |
+| /bikes/, /bikes/:bike_id/ | Bike API | Staff read |
+| /dashboard/ | Dashboard metrics | Staff read projection |
+| /valuation/queue/ | Valuation queue | Staff read projection |
+| /valuation/bikes/:bike_id/ | Valuation detail | Staff read |
+| /valuation/bikes/:bike_id/pricing/ | Draft pricing | Staff command |
+| /valuation/bikes/:bike_id/confirm/ | Confirm valuation | State transition |
+| /valuation/bikes/:bike_id/success/ | Success projection | Read |
+| /vehicles/, /vehicles/pending-sale/ | Vehicle list projections | Staff read |
+| /vehicles/:bike_id/ | Vehicle detail | Staff read |
+| /vehicles/:bike_id/sale/ | Set sale status | State transition |
+| /vehicles/:bike_id/sale/complete/ | Complete sale | Terminal transition |
+| /vehicles/:bike_id/sale/fail/ | Fail sale | Terminal transition with reason |
+| /pickups/, /pickups/:bike_id/ | Pickup list/detail | Staff read |
+| /pickups/:bike_id/inspection/ | Inspection | Mutating step |
+| /pickups/:bike_id/picked-up/ | Handover | Mutating step |
+| /pickups/:bike_id/complete/ | Pickup completion | Mutating step |
+| /pickups/:bike_id/reject/ | Reject pickup | Mutating step |
+| /purchases/, /purchases/:bike_id/ | Purchase list/detail | Staff read |
+| /purchases/:bike_id/bank/ | Bank verification | Mutating |
+| /purchases/:bike_id/inspection/pass/ | Inspection pass | Mutating |
+| /purchases/:bike_id/deposit/pay/ | Deposit payment record | Mutating |
+| /purchases/:bike_id/confirm-pickup/ | Pickup confirmation | Mutating |
+| /purchases/:bike_id/notary/confirm/ | Notary confirmation | Mutating |
+| /purchases/:bike_id/remaining/pay/ | Remaining payment | Mutating |
+| /purchases/:bike_id/complete/ | Purchase close | Terminal |
+| /purchases/:bike_id/reject/ | Purchase rejection | Terminal |
+| /webhooks/bank/payout/ | Bank payout | Signed external callback |
+
+## State machine rules
+
+Treat state machines as projections and transitions distributed across models, helper modules and APIViews. Before drawing a simple linear diagram, inspect backend/bikes/sale.py and purchases_api.py: existing pickup schedules, sale records and legacy rows affect allowed transitions. In particular:
+
+- pickup complete and sale complete are different facts;
+- sale pending may require a completed pickup and reconciled record;
+- sale failed requires a valid pending state and reason;
+- bank notification is not sufficient unless linked to local purchase, with amount and signature validated;
+- notification delivery/outbox status does not equal business completion.
+
+The outbox claims rows using leases, attempts remote emission, marks success/failure and caps retries. The outbox's lease protects parallel workers; a crashed worker must be reclaimed/reconciled without duplicating user-facing completion. The event payload includes a stable bike identity and valuation/pricing snapshot.
+
+## Clean responses and failures
+
+Internal APIs are role-protected. Classify based on concrete view:
+
+- validation and missing command fields: 400 with safe field/error detail;
+- no/expired staff token: 401;
+- role/object mismatch: 403;
+- bike, schedule or purchase absent: 404;
+- invalid state / already completed / duplicate webhook: route-specific 400 or 409;
+- provider or mirrored DB unavailable: bounded 5xx and retryable event/outbox status;
+- success: persisted state plus the relevant identity/status projection. Don't state a uniform envelope. Check APIView return branches and API exception handler.
+
+The mobile completion callback may fail after an internal DB commit. Recovery source is the outbox row and mirrored mobile state. Do not roll back the completed FMP decision merely because a notification call timed out.
+
+## Roles and safety
+
+The frontend can hide controls but only server-side permissions enforce roles. Admin staff management, price decisions, payout, sale terminal transitions and marketplace publication are elevated operations. HMAC callbacks must reject bad signatures before parsing a business action as trusted. Staff reset-password must not return credential material. Request bodies can contain PII/bank information; logs should record identifiers/status, not account number or authentication header.
+
+## Deep code paths worth reading
+
+- backend/bikes/domain.py: queue exclusions, status and SLA.
+- backend/bikes/tipp_pricing.py: rate snapshot and dual-price derivation.
+- backend/bikes/realtime_bridge.py: outbox claim/emit and rejection bridge.
+- backend/bikes/sale.py: sale transition guard and dealer publication.
+- backend/bikes/pickups_api.py: operator pickup steps.
+- backend/bikes/purchases_api.py: purchase projection, step derivation, command endpoints and payout callback.
+- backend/bikes/observability.py or backend/timoto/observability.py: sanitized error event contract.
+
+## Contract-test checklist
+
+Test each transition from valid and invalid predecessor states; wrong role and wrong object ownership; duplicate webhooks; HMAC mismatch; bank amount mismatch; outbox transient failure then success; stale lease; no double publication; exact rate snapshot retained after configuration changes; sale fail then forbidden complete; complete pickup then sale pending; full purchase rejection after terminal completion. A passing API response is not sufficient without reading the persisted row and downstream event receipt.
+
+## FMP persistence and delivery order
+
+Backend/bikes/submissions_api.py is the command owner for operator submit/reject. Pricing helper tipp_pricing.py snapshots the active TIPP/market multiplier/fee settings so historic decisions can be explained after configuration changes. realtime_bridge.py persists the mobile completion event to UserCompletionOutbox before delivery. Its claim methods take a lease, mark successful emission or failure, and cap retry attempts; a scheduled/management worker can process the next eligible row. The write commit and TMA HTTP call are distinct events. Operational dashboards should expose pricing_saved, outbox_pending, emitted, retry_exhausted separately.
+
+The mobile endpoint expects a signed operator offer read. mobile_operator_offer_views.py computes/verifies HMAC over bike ID and operator-review request ID using configured secret. The internal callback should never trust those IDs from a body without signature and correlation check. A changed/replayed request ID must not return an unrelated valuation.
+
+## Pickup and purchase UI projections
+
+purchases_api.py contains its own UI status/step derivation. It resolves latest pickup schedule and BikeSaleRecord, maps appointment date/time slots to Vietnam timezone, and creates list/detail payloads. This is a compatibility/read-model layer: a field in purchase response may be derived, not persisted on a Purchase row. Operators should understand that changing pickup schedule can change display step. Keep response fields with provenance where audit matters.
+
+sale.py has guards can_mark_sale_pending and can_mark_sale_failed, helpers to ensure sale record exists from completed pickup, and mark_sale_complete/mark_sale_failed. Listing publication is a separate helper that checks gas fuel/price and configuration; successful sale transition can trigger catalog combo upsert. A dealer sync failure should become an actionable integration error/retry rather than undoing verified custody/sale facts.
+
+## Exact tests to bind to behavior
+
+The API contract suite should assert the path-specific role matrix, field errors, timestamps/timezone, state predecessor, emitted outbox event, HMAC payload bytes, retry count and duplicate handling. Add database transaction assertions: invalid transition writes nothing; valid transition writes one audit/state record; callback failure leaves outbox recoverable; retry emits same event identifier; stale lease cannot mark delivery success. Sale-complete tests should assert exact catalog behavior for eligible/ineligible fuel type and feature flag on/off.

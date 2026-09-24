@@ -1,0 +1,172 @@
+---
+title: "Mobile API Route Ledger"
+sidebarTitle: "Mobile routes deep dive"
+description: "Source-extracted route inventory with concrete method, handler ownership, response branch, and error evidence."
+---
+
+# Mobile API Route Ledger
+
+## Source and naming
+
+Root: timoto-mobile. Prefix composition comes from backend/config/urls.py and backend/apps/\*/urls.py. Angle-bracket Django converters below are shown as colon parameters for readability. This ledger is backend route evidence. A frontend call without a matching URL is listed as drift rather than silently invented.
+
+## Root mounts
+
+| Prefix | URL include | Source |
+| --- | --- | --- |
+| /api/v1/ | apps.bikes.urls | backend/config/urls.py |
+| /api/v1/auth/ | apps.users.urls | backend/config/urls.py |
+| /api/v1/upload/ | apps.upload.urls | backend/config/urls.py |
+| /api/v1/options/ | apps.options.urls | backend/config/urls.py |
+| /api/v1/ocr/ | apps.ocr.urls | backend/config/urls.py |
+| /api/v1/evaluation/ | apps.evaluation.urls | backend/config/urls.py |
+| /api/v1/feedback/ | apps.feedback.urls | backend/config/urls.py |
+| /api/v1/internal/listings/:listing_id/buyer-found/ | direct callback | backend/config/urls.py |
+| /api/v1/bug-reports[ / ] | direct aliases | backend/config/urls.py |
+
+## Bikes router and custom bike endpoints
+
+BikeViewSet is registered as router basename bike in backend/apps/bikes/urls.py, after custom routes. Router supplies standard list/create/detail/update/delete actions for /api/v1/bikes/ and /api/v1/bikes/:bike_id/. ViewSet custom actions:
+
+- GET /api/v1/bikes/health
+- POST /api/v1/bikes/:bike_id/media
+- POST /api/v1/bikes/:bike_id/media/batch
+- DELETE /api/v1/bikes/:bike_id/media/:media_id
+- POST /api/v1/bikes/:bike_id/evaluate
+
+Explicit custom routes:
+
+- POST /api/v1/bikes/:bike_id/evaluate/async/
+- GET /api/v1/bikes/:bike_id/evaluate/result/
+- GET /api/v1/bikes/pickup-schedule/list/
+- POST /api/v1/bikes/pickup-schedule/
+- GET/PATCH /api/v1/bikes/pickup-schedule/:schedule_id/
+- GET /api/v1/bikes/sale-history/
+- POST /api/v1/bikes/sale-history/:bike_id/cancel/
+
+## Marketplace
+
+All paths below are exact route declarations from backend/apps/bikes/urls.py.
+
+| Methods | Exact path | View |
+| --- | --- | --- |
+| GET | /api/v1/marketplace/listings/ | marketplace_listings |
+| GET | /api/v1/marketplace/listings/:bike_id/ | marketplace_listing_detail |
+| GET | /api/v1/marketplace/listings/:bike_id/media/ | marketplace_listing_media |
+| GET | /api/v1/marketplace/listings/:bike_id/condition-analysis/ | marketplace_listing_condition |
+| GET | /api/v1/marketplace/listings/:bike_id/variants/ | marketplace_listing_variants |
+| GET | /api/v1/marketplace/listings/:bike_id/related/ | marketplace_listing_related |
+| POST | /api/v1/marketplace/listings/:bike_id/share-link/ | marketplace_listing_share_link |
+| GET/POST per view decorator | /api/v1/marketplace/contact-requests/ | marketplace_contact_requests |
+| GET/POST per view decorator | /api/v1/marketplace/buy-intents/ | marketplace_buy_intents |
+| GET | /api/v1/marketplace/filters/ | marketplace_filters |
+
+The function-level API decorators determine exact methods; confirm each before generating clients. marketplace.py assembles seller inventory into cards and detail view: list filtering, sorting, prices, pickup/media, badges and evaluation highlights. Keep raw bike serialization distinct from the public listing read model.
+
+## Async evaluation and operator review
+
+| Methods | Path | Notes |
+| --- | --- | --- |
+| POST | /api/v1/bikes/:bike_id/evaluate/async/ | Accepted job; follow with result GET |
+| GET | /api/v1/bikes/:bike_id/evaluate/result/ | Poll persistent evaluation state |
+| POST | /api/v1/operator-review-requests/ | Create request |
+| POST | /api/v1/operator-review-requests/cancel/ | Cancel request; ordered before collection path |
+| POST | /api/v1/bikes/assign-owner/ | Assign operation owner |
+| GET | /api/v1/evaluation/result/ | Query compatibility route for bike_id and operator_review_request_id |
+
+Evaluation URL include:
+
+- GET /api/v1/evaluation/ health
+- POST /api/v1/evaluation/bike/
+- POST /api/v1/evaluation/exterior/
+- POST /api/v1/evaluation/engine/
+- POST /api/v1/evaluation/pricing/
+- POST /api/v1/evaluation/full/
+- GET /api/v1/evaluation/result/ and /api/v1/evaluation/result/:bike_id/
+- GET /api/v1/evaluation/operator-price/ and /:bike_id/
+- POST /api/v1/evaluation/price-selection/:bike_id/
+- POST /api/v1/evaluation/listing/:bike_id/confirm/
+- POST /api/v1/evaluation/listing/:bike_id/switch-to-instant-purchase/
+- POST /api/v1/evaluation/listing/:bike_id/cancel/
+- GET /api/v1/evaluation/listing/:bike_id/
+
+## Auth
+
+Source: backend/apps/users/urls.py. Views in users/views.py, zalo_views.py, apple_views.py.
+
+| Methods | Path |
+| --- | --- |
+| POST | /api/v1/auth/check-user/ |
+| POST | /api/v1/auth/signup/ and /register/ (same view alias) |
+| POST | /api/v1/auth/confirm-signup/ |
+| POST | /api/v1/auth/resend-code/ |
+| POST | /api/v1/auth/login/ |
+| POST | /api/v1/auth/login-otp/ |
+| POST | /api/v1/auth/refresh/ |
+| POST | /api/v1/auth/mobile/login/ |
+| POST | /api/v1/auth/mobile/verify-login-otp/ |
+| POST | /api/v1/auth/mobile/signup/ |
+| POST | /api/v1/auth/mobile/send-otp/ |
+| POST | /api/v1/auth/mobile/verify-otp/ |
+| POST | /api/v1/auth/mobile/refresh/ |
+| POST/DELETE | /api/v1/auth/push/register-token/ |
+| POST/DELETE | /api/v1/auth/register-fcm-token and /register-fcm-token/ |
+| POST | /api/v1/auth/forgot-password/ |
+| POST | /api/v1/auth/verify-forgot-password-code/ |
+| POST | /api/v1/auth/reset-password/ |
+| GET | /api/v1/auth/zalo/start/ |
+| GET | /api/v1/auth/zalo/callback/ |
+| POST | /api/v1/auth/zalo/native/ |
+| POST | /api/v1/auth/apple/native/ |
+| GET | /api/v1/auth/me/ |
+| GET | /api/v1/auth/account/profile/ |
+| PUT/PATCH | /api/v1/auth/me/ (same path, second declaration) |
+| DELETE/POST | /api/v1/auth/account/delete/ |
+| POST/PUT/PATCH | /api/v1/auth/update-store-info/ |
+| GET | /api/v1/auth/store-size/ and /store-scale-choices/ |
+
+Route defect: two view functions are registered at /auth/me/ for GET profile and PUT/PATCH update. Django resolves the first matching path before the view handles the HTTP method, so the earlier GET-only function is likely to shadow the later update function and return 405 for PUT/PATCH. Confirm with Django URL resolver/API test and merge the methods into one view or use a distinct route.
+
+## Upload, OCR, options, feedback
+
+Upload routes (POST): /upload/images, /videos, /audios, /recognition-paper, /presigned-url, /presigned-urls/batch. They do not end with slash in the URL declarations; deployment slash normalization may redirect.
+
+OCR: POST /api/v1/ocr/vehicle-registration/.
+
+Options GET routes: /brands, /models, /years, /mileage-options, /mileage, /document-types, /warranty-options, /warranty, /condition-options, /condition, /cities, /provinces, /price-range, /price-range-simple. No /wards route is declared in apps/options/urls.py.
+
+Feedback:
+
+- GET/POST /api/v1/feedback/
+- POST /api/v1/feedback/bug-reports/presigned-media/ and no-slash alias
+- POST /api/v1/feedback/bug-reports/ and no-slash alias
+- POST /api/v1/bug-reports/ and no-slash alias
+- POST /api/v1/bug-reports/presigned-media/ and no-slash alias
+
+Internal callback:
+
+- POST /api/v1/internal/listings/:listing_id/buyer-found/ (UUID converter); view checks HMAC in backend/apps/evaluation/listing_views.py.
+
+## Client/backend drift register
+
+Frontend Apps/src/api/endpoints.ts mentions several paths that are absent from these URL modules:
+
+- /auth/logout/
+- /user/profile and /user/change-password
+- /options/wards
+- /marketplace/purchase-orders/\* and /marketplace/payments/\*
+- /marketplace/listings/... paths differ in base shape from backend only if other service version is used. Every mismatch needs its own row: caller file, configured base URL, expected service, matching Django resolver, live smoke result, owner. A not-found URL may be owned by another target; do not patch this backend until the base URL is established.
+
+## Response extraction workflow
+
+For each table row, obtain:
+
+1. decorator/class method list;
+2. authentication/permission class;
+3. serializer required/optional fields;
+4. explicit Response status/body branches;
+5. model writes and external calls;
+6. client handling/retry code;
+7. tests and Postman fixture.
+
+This ledger intentionally avoids guessing uniform status/body. Use each handler source for response evidence.

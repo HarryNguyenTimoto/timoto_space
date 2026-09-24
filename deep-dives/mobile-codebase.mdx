@@ -1,0 +1,176 @@
+---
+title: "Deep Dive: timoto-mobile Codebase"
+sidebarTitle: "Codebase deep dive"
+description: "Code-derived architecture, state machines, service boundaries, and endpoint implementation for timoto-mobile."
+---
+
+# Deep Dive: timoto-mobile Codebase
+
+## Evidence and boundaries
+
+Repository inspected: /Users/toannguyen/timoto-mobile. The repository contains a React Native app under Apps/ and a second app tree TiMotoAI/, plus Django API under backend/. The active deployment target for the two mobile app trees must be checked in the release configuration before choosing which tree is authoritative. The backend URL root is backend/config/urls.py; detailed route ownership is split into backend/apps/\*/urls.py. The frontend canonical route constants are Apps/src/api/endpoints.ts and service calls live under Apps/src/api and Apps/src/services.
+
+This chapter describes implementation observed in source, not a claim every environment deploys it. The most reliable contract is the concrete view branch and serializer, followed by the URL module, then app client code and older Postman collections.
+
+## Runtime map
+
+| Layer | Source | Responsibility |
+| --- | --- | --- |
+| React Native navigation/screens | Apps/src/pages, Apps/src/navigation | Intake wizard, seller choices, personal/marketplace views |
+| HTTP contract | Apps/src/api/endpoints.ts | Relative routes; API base URL is selected elsewhere |
+| HTTP transport | Apps/src/api/apiClient.ts | Fetch, auth tokens, retry/refresh and response handling |
+| Feature services | Apps/src/api, Apps/src/services | Bike, evaluation, marketplace, upload, feedback, realtime |
+| Django root | backend/config/urls.py | API prefixes and error handlers |
+| Domain models | backend/apps/bikes/models.py | Bike, media, pickup, evaluation, operator review, listing, buy intent |
+| Evaluation pipeline | backend/apps/bikes/bike_evaluate_flow.py | Async/sync work, persistence, result response |
+| Realtime bridge | backend/apps/bikes/realtime_views.py and aws_websocket_handlers.py | Request identity, WS lifecycle, operator completion |
+
+## Rider intake as implemented
+
+The registration flow begins in Apps/src/pages/Step01. RegisterInput reads navigation state and prior draft values, applies OCR-derived values, and still leaves user confirmation/editing in the form. RegisterInputSecond continues capture/review. The server's OCR view is backend/apps/ocr/views.py and delegates to GeminiOCRService in backend/apps/ocr/services.py. OCR output is candidate data, not authoritative vehicle identity: users must be able to fix brand/model/year/plate/engine/chassis/color before persistence.
+
+The bike model in backend/apps/bikes/models.py uses UUID bike_id and a separate masked_bike_id, associates an owner, stores brand/model/year, mileage, condition/location, vehicle attributes, optional registration identifiers, base price/specs, and timestamps. BikeMedia is a separate relation. Do not describe uploaded files as stored directly in the bike row: the upload service writes S3 keys and the bike/media layer holds references.
+
+### Upload contract
+
+Routes under /api/v1/upload/ are declared in backend/apps/upload/urls.py:
+
+- POST images
+- POST videos
+- POST audios
+- POST recognition-paper
+- POST presigned-url
+- POST presigned-urls/batch
+
+Views are in backend/apps/upload/views.py. They validate serializer input, generate per-bike media keys, select next indices, and call S3Service in backend/apps/upload/services.py. The direct upload and presign routes have different network paths: direct multipart upload returns persisted media metadata; presign returns a short-lived PUT URL and key, after which the client performs the object PUT. A successful presign is not evidence that the PUT finished or that the bike record references the object. Client handling must preserve media ordering and correlate returned S3 key to the bike. Never log the presigned URL query string.
+
+## Evaluation pipeline
+
+The source defines two distinct evaluation families.
+
+1. Form based sections: POST /api/v1/evaluation/bike/, exterior/, engine/, pricing/, and full/ map to views in backend/apps/evaluation/views.py.
+2. Bike-level async full evaluation: POST /api/v1/bikes/:bike_id/evaluate/async/ and GET /api/v1/bikes/:bike_id/evaluate/result/ map to views in backend/apps/bikes/views.py.
+3. Operator review result and dual-price choice are under /api/v1/evaluation/result/, operator-price/, and price-selection/:bike_id/.
+4. Seller listing commands are under /api/v1/evaluation/listing/:bike_id/.
+
+bike_evaluate_flow.py obtains the bike and media, calls the configured evaluation runner, persists snapshot/evaluation fields, may enqueue async work, and builds a pending/result response. Async POST is intentionally fire-and-forget; clients should retain bike_id and poll result or subscribe realtime. Do not treat HTTP acceptance as a finished valuation. No-media and runner errors need a distinct client state. The persisted BikeEvaluationResult stores result/status and snapshots; clients should reconcile by bike_id after process restart rather than trusting only an in-memory spinner.
+
+## Operator review and realtime
+
+The current client orchestration is in Apps/src/services/realtimeOperatorReview.ts. It creates an operator-review request first, then opens a WebSocket using the resolved realtime URL and a Cognito ID token. It considers the channel connected only after a JSON message with type connected. It waits up to 120 seconds for valuation_ready, extracts operator_review_request_id from the event, then fetches the canonical REST result endpoint. The WebSocket is a notification channel; the REST result is the final read model.
+
+Backend route declarations:
+
+- POST /api/v1/operator-review-requests/
+- POST /api/v1/operator-review-requests/cancel/
+- POST /api/v1/bikes/assign-owner/
+- GET /api/v1/evaluation/result/?bike_id=...&operator_review_request_id=...
+- compatibility GET /api/v1/evaluation/result/:bike_id/
+
+The ordering in backend/apps/bikes/urls.py matters: cancel is declared before the request collection, and custom routes are added before the DRF BikeViewSet router. The WebSocket handlers validate Cognito identity and maintain connection records; do not claim JWT semantics for that socket merely because the REST client uses bearer tokens. Event types are a small event protocol: connected, valuation_ready, and disconnect/error conditions. If socket delivery is lost, the app needs a recovery read/poll path.
+
+## Marketplace: source/client mismatch that needs attention
+
+Backend marketplace routes are explicitly:
+
+- GET /api/v1/marketplace/listings/
+- GET /api/v1/marketplace/listings/:bike_id/
+- GET /api/v1/marketplace/listings/:bike_id/media/
+- GET /api/v1/marketplace/listings/:bike_id/condition-analysis/
+- GET /api/v1/marketplace/listings/:bike_id/variants/
+- GET /api/v1/marketplace/listings/:bike_id/related/
+- POST /api/v1/marketplace/listings/:bike_id/share-link/
+- POST /api/v1/marketplace/contact-requests/
+- POST /api/v1/marketplace/buy-intents/
+- GET /api/v1/marketplace/filters/
+
+These are in backend/apps/bikes/urls.py and backend/apps/bikes/marketplace_views.py. The query and card/detail projection is implemented in backend/apps/bikes/marketplace.py. It combines Bike with media, latest pickup, latest pricing, evaluation, and sale status. Filters normalize brand/model/bike type/displacement/power and sort parameters; unknown and malformed filters should be treated according to the view's validation path. The app client in Apps/src/api/endpoints.ts also names purchase-orders/, delivery-availability, schedule, cancel, refund-status, remaining/pay, and payments/:id/regenerate. These names were not present in backend/apps/bikes/urls.py at inspection. This is a concrete route-contract drift: do not document them as backend-supported until a different URL include or deployed service is identified.
+
+## Seller history and pickup
+
+Routes under /api/v1/bikes/ provide:
+
+- GET and POST router root for bike records; standard detail/update/delete routes are generated by BikeViewSet.
+- GET /health
+- POST media, POST media/batch, DELETE media/:media_id
+- POST evaluate
+- POST async evaluate and GET result
+- GET sale-history and POST sale-history/:bike_id/cancel
+- GET/POST pickup-schedule, GET list, GET/PATCH detail
+
+The app renders sale history into a seller card, not a raw database row. backend/apps/bikes/sale_history.py joins pickup rows, operator review decisions, listing, valuation, media and registration progress. It derives card state, status badge, resume step, pending/completed tab and valuation TTL. Cancellation can update sale state and valuation expiry; callers must read the returned canonical state. Pickup schedules are separate records: create associates bike/time/contact data; list and detail apply access checks; PATCH must not assume arbitrary schedule fields are writable.
+
+## Auth and identity
+
+backend/apps/users/urls.py declares password/OTP, mobile signup/login, refresh, push token, password reset, Zalo start/callback/native, Apple native, profile, delete account, store info and store-scale choices. Several aliases exist for legacy/Postman compatibility. The handler-level behavior in backend/apps/users/views.py matters: check-user returns routing status; signup/OTP and confirmation can involve Cognito; access tokens and refresh tokens are distinct. Source comment/client notes say ID token is used for some calls, so a general statement that every REST endpoint uses the same bearer token is unsafe. Profile is GET and PUT/PATCH at the same path. Account deletion accepts DELETE or POST and is destructive.
+
+Known client/server drift visible in endpoint constants:
+
+- client mentions /auth/logout/ but no corresponding route appears in users/urls.py;
+- client USER paths /user/profile, /user/change-password are not in the Django users URL file;
+- client options/wards is not declared by options/urls.py;
+- canonical backend profile alias is /auth/account/profile/, while frontend constant refers to /user/profile. Document these as mismatches until runtime evidence confirms a proxy or additional URL configuration.
+
+## API endpoint inventory from URL modules
+
+| Route family | Methods from handler/client | Implementation and key behavior |
+| --- | --- | --- |
+| /api/v1/ | GET root and BikeViewSet list/create/detail/update/delete | Bike ownership and serialized media/evaluation state |
+| /api/v1/marketplace/\* | GET reads; POST contact/buy-intent/share-link | Read model projects; actions create leads/intents |
+| /api/v1/bikes/:id/evaluate/async/ | POST | Returns accepted/pending contract; poll result |
+| /api/v1/bikes/pickup-schedule/\* | GET, POST, PATCH | Seller schedule management with ownership checks |
+| /api/v1/bikes/sale-history/\* | GET, POST cancel | Derived seller card state; cancellation transition |
+| /api/v1/operator-review-requests/\* | POST create/cancel | Operator queue state and realtime correlation |
+| /api/v1/evaluation/\* | GET/POST | Section evaluation, prices, listing selection/status |
+| /api/v1/auth/\* | GET/POST/PUT/PATCH/DELETE by view | OTP/JWT/Cognito, profile, store, social login |
+| /api/v1/upload/\* | POST | Multipart and presigned storage flows |
+| /api/v1/ocr/\* | POST | Registration scan through configured Gemini service |
+| /api/v1/options/\* | GET | Catalog choices and motorcycle pricing ranges |
+| /api/v1/feedback/\* | GET/POST | Feedback, bug report and presigned media |
+| /api/v1/internal/listings/:id/buyer-found/ | POST | HMAC verified internal callback |
+
+## Response and error behavior
+
+The codebase does not have one universal JSON envelope. Route-specific examples and HTTP codes belong to view responses and Postman fixtures. Broad handling:
+
+- serializer/request errors: field-keyed validation body, generally 400;
+- auth: DRF/JWT/Cognito errors, 401/403 based on authentication and permissions;
+- absent bike/media/schedule: 404;
+- illegal sell/pickup/listing state: route-specific 400 or conflict response;
+- evaluation work: pending/accepted state, then result body from GET;
+- OCR/S3/Cognito/model dependency failure: sanitized provider/internal error, often 5xx;
+- delete/download: body/status/content-type depends on handler.
+
+This is a classification for reading the handlers, not a newly imposed response schema. Exact status and JSON keys should be filled from each concrete Response return before publishing an SDK contract.
+
+## State objects and source of truth
+
+Bike is the intake aggregate; BikeMedia stores durable media references; BikeEvaluationResult stores technical/commercial result; OperatorReviewRequest and OperatorReviewResult correlate human review; SellerPriceSelection stores the chosen dual-price path; SellerListing stores marketplace/instant listing state; BikePickupSchedule stores pickup appointment and operator progress; MarketplaceBuyIntent and MarketplaceContactRequest capture buyer funnel events. WebSocket connections and processed realtime event rows support delivery/deduplication and are not the business source of truth.
+
+## Operational risks derived from implementation
+
+1. Two app trees create a release-target ambiguity; compare CI/CodeMagic/build workflows and deployed bundle metadata before editing the "active" app.
+2. Frontend endpoint definitions contain calls absent from Django URL modules; generate a route drift report on every API release.
+3. User-visible evaluation completion depends on async worker, persisted result and realtime notification. Test recovery after app process death.
+4. Upload success has two stages for presigned flow; distinguish URL issuance from object upload and record attachment.
+5. Sale-history state is derived across tables. UI badges must use backend state, not local assumptions.
+6. Callback HMAC protects buyer-found/listing operation; reject duplicate/invalid signatures before state mutation.
+7. Payment/order/purchase routes called by frontend may not be in this service. Identify owning backend before declaring the user purchase flow complete.
+
+## Change checklist
+
+For each new route, update backend/apps/\*/urls.py, view/service tests, Apps/src/api/endpoints.ts, relevant service caller, Postman contract, auth notes and error examples. For state transitions, include initial state, allowed transition, rejected transition, idempotency/replay behavior, persistence writes, and emitted events. For async evaluation, specify accepted response, polling interval/backoff, terminal states, timeout, and recovery behavior.
+
+## Concrete handler response evidence
+
+Operator-review creation is specified in backend/apps/bikes/realtime_views.py. POST requires IsAuthenticated. Missing or invalid bike_id returns 400 with success=false, error_code INVALID_BIKE_ID and an explanatory error_message. Missing bike returns 404/BIKE_NOT_FOUND. Ownership mismatch returns 403/REQUEST_BIKE_USER_MISMATCH. Successful new request returns success, operator_review_request_id, bike_id, user_id, status, is_active, created_at and expires_at. An existing active request is returned as 200 (idempotent hit). Expired active requests are marked EXPIRED inside the transaction before replacement. A new request expires after 15 minutes and schedules pg_notify on transaction commit. If uniqueness races, handler re-reads and returns the active row; if none exists, it returns 500/OPERATOR_REVIEW_REQUEST_CREATE_FAILED. This is stronger evidence than an assumed 201 create.
+
+OTP signup evidence in backend/apps/users/views.py is mixed. check_user rejects missing identifier with 400 and an error field; success returns exists and is_pending booleans. Signup is IP rate limited to 3 per hour, accepts phone_number or phone, and creates PendingUser rather than immediately creating Cognito user. An already registered phone can return 200 with already_registered=true and a login session. mobile_send_otp is limited to 5 per minute and intentionally tolerates missing pending_id in some staging/dev paths. mobile_verify_otp is limited to 10 per minute; it requires otp_code, resolves PendingUser by id or normalized phone, returns 404 if absent, 400 if expired/invalid OTP, then creates or updates Cognito and Django identity. Do not publish a development OTP or bypass as production behavior.
+
+## Realtime protocol details
+
+The REST request is authoritative for creation. Once created, the client obtains a Cognito ID token from tokenStorage, opens WS with token in query, waits for a connected event, then valuation_ready. It has a 120-second readiness timeout. When valuation_ready arrives, it issues GET result with bike_id and operator_review_request_id. If result has success=true and data, it emits the result event and marks local job done; otherwise it emits result_not_ready or result_fetch_error. WebSocket errors/close emit ws_error/ws_closed. The WebSocket is a notification channel; REST result is canonical. Query token placement can expose values in proxy/access logs; redact query values.
+
+## Marketplace read-model behavior
+
+marketplace_views.py uses AllowAny and optional user identity. Listing list delegates to marketplace.list_marketplace_listings and maps a payload status field to HTTP status. Detail/media/condition/variants/related/share-link/contact/buy-intent each delegate to marketplace_detail.py functions; do not infer shared responses from route names. marketplace.py derives public pricing from multiple pricing/sale sources and only exposes eligible inventory. This module is the response projection contract; Bike serializer is not equivalent.

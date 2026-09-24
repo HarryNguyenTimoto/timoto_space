@@ -1,0 +1,133 @@
+---
+title: "Dealer API Route Ledger"
+sidebarTitle: "Dealer routes deep dive"
+description: "Source-extracted route inventory with concrete method, handler ownership, response branch, and error evidence."
+---
+
+# Dealer API Route Ledger
+
+## Root prefixes
+
+Source: /Users/toannguyen/timoto-dealer-portal/backend/timoto/urls.py.
+
+| Prefix | Source include |
+| --- | --- |
+| /api/v1/auth/ | users |
+| /api/v1/catalog/ | catalog |
+| /api/v1/orders/ | orders |
+| /api/v1/payments/ | payments |
+| /api/v1/ | bike assessment, AI report, notifications, auctions |
+| /api/auth/ | legacy users |
+| /api/orders/ | legacy orders |
+| /api/catalog/ | legacy catalog |
+| /api/payments/ | legacy payments |
+| /api/token_generate and /api/token_generate/ | official VietQR token endpoint |
+| /bank/api/transaction-sync and slash alias | official VietQR callback |
+| /health/ | health check |
+| /api/test/ | test endpoint; environment exposure must be checked |
+
+## Auth routes
+
+From backend/users/urls.py:
+
+- GET /api/v1/auth/me/
+- POST /api/v1/auth/check-user/
+- POST /api/v1/auth/signup/
+- POST /api/v1/auth/confirm-signup/
+- POST /api/v1/auth/resend-code/
+- POST /api/v1/auth/login/
+- POST /api/v1/auth/forgot-password/
+- POST /api/v1/auth/verify-forgot-password-code/
+- POST /api/v1/auth/reset-password/
+- POST /api/v1/auth/confirm-forgot-password/ (deprecated)
+- GET/PATCH profile path aliases under account/profile where handler permits
+- PATCH/POST store update according to view
+- GET store-size and store-scale-choices
+- GET Zalo proxy status; GET/POST Zalo login and callback as implemented
+
+Zalo endpoints may require backend proxy configuration. A successful proxy-status response does not confirm login provider reachability.
+
+## Catalog, bikes, orders, auctions
+
+Catalog router has authenticated and public routers for bikes, with filter-options routes. Exact viewset actions:
+
+- /api/v1/catalog/bikes/ collection/detail
+- /api/v1/catalog/public/bikes/ collection/detail
+- /api/v1/catalog/filter-options/
+- /api/v1/catalog/public/filter-options/
+
+The mount includes legacy /api/catalog/. Public viewsets must use a restricted serializer. Catalog Combo groups multiple physical Bike UUIDs.
+
+Bike assessment router: /api/v1/bikes/ and detail/action routes from BikeAssessmentViewSet. Evaluation: GET /api/v1/evaluations/bikes/:bike_id/ai-report/. Notification router registers /api/v1/notifications/ and /api/v1/notification-devices/ (ViewSet actions may add detail routes).
+
+Orders router is registered at empty path under /api/v1/orders/ and legacy /api/orders/. Inspect DealerOrderViewSet actions for methods beyond CRUD and confirm permission scoping. Auction router registers /api/v1/auctions/.
+
+## Payments: concrete URL patterns
+
+From backend/payments/urls.py and backend/timoto/urls.py:
+
+- POST /api/v1/payments/deposit/create/
+- POST /api/v1/payments/full-payment/create/
+- POST /api/v1/payments/dealer_order/create/
+- POST /api/v1/payments/dealer-order/create (compat)
+- POST /api/v1/payments/dealer_order/create (compat)
+- GET/POST /api/v1/payments/checkouts/ maps to checkout create
+- GET /api/v1/payments/checkouts/:checkout_id/
+- GET /api/v1/payments/checkouts/:checkout_id/qr/
+- GET /api/v1/payments/vnpay/return/
+- POST /api/v1/payments/vnpay/ipn/ (confirm exact method from view)
+- POST /api/v1/payments/vietqr/callback/
+- POST /api/v1/payments/token_generate/
+- GET /api/v1/payments/deposit/confirmation/:auction_id/
+- GET /api/v1/payments/deposit/confirmation/:auction_id/pdf/
+- GET /api/v1/payments/full-payment/confirmation/:auction_id/
+- GET /api/v1/payments/full-payment/confirmation/:auction_id/pdf/
+- GET /api/v1/payments/status/:auction_id/
+- GET /api/v1/payments/delivery/:auction_id/
+- POST /api/token_generate and slash
+- POST /bank/api/transaction-sync and slash
+
+URL module also mounts payments at legacy /api/payments/. Duplicated route definitions should be inventoried with resolved HTTP method and same view mapping before being described as stable public API.
+
+## Checkout/payment state boundaries
+
+Create-deposit/full-payment creates an intent/reference. QR generation creates payment instructions. Browser return displays provider redirect state. IPN/VietQR callback is the trusted settlement input after signature verification and local reference/amount validation. Confirmation page/PDF reads a durable state. Status and delivery read paths are projections. A paid flag should only follow validated provider evidence and one transaction that settles the local checkout/order idempotently.
+
+Callback implementation must be read in backend/payments/views.py and checkout_views.py. Capture:
+
+- provider auth/signature fields;
+- local lookup key;
+- amount/currency comparison;
+- duplicate transaction response;
+- unknown order response;
+- transaction locking and commit point;
+- outbound acknowledgement format. No generic “2xx means paid” client interpretation is safe.
+
+## Exact response classes to verify
+
+| Endpoint family | Content type/status expectation | Evidence source |
+| --- | --- | --- |
+| Catalog/order lists | JSON; paginated or list | serializer + pagination class |
+| Checkout create | JSON resource/reference | checkout_views.py |
+| QR | JSON QR/payment data | checkout_views.py |
+| VNPay return | redirect or HTML | payment_return |
+| Provider callback | compact JSON/text acknowledgement | payment_ipn/vietqr_callback |
+| Confirmation PDF | application/pdf | PDF handler |
+| Health | JSON status | health_check |
+| API test | test response, may be public | api_test |
+
+Do not state exact body or code before extracting the concrete Response branch and tests. This ledger separates route existence from response verification.
+
+## Legacy route migration
+
+Track callers separately for /api/v1/ and /api/. Compatibility routes can have subtly different payment semantics and session expectations. Deprecation needs access logs by route, caller mapping, announced sunset, and a period with tests. Do not remove route aliases because new clients use v1.
+
+## Contract testing
+
+- Resolve every method/path with Django URL resolver in a configured test process.
+- Assert unauthenticated, authenticated wrong dealer, and correct dealer response.
+- Test Combo ownership and private-field suppression.
+- Test checkout create retry, QR refresh, callback duplicate, amount mismatch, wrong merchant, signature mismatch, unknown checkout and callback race.
+- Verify redirects do not mutate paid state.
+- Verify PDF content type, filename and authorization.
+- Verify router-generated detail/action methods rather than inferring from URL shape.
