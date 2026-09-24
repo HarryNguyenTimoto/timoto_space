@@ -49,7 +49,8 @@
           "systems/dealer-portal",
           "systems/timoto-internal-app",
           "systems/timoto-ai-web",
-          "systems/chototcaodulieu"
+          "systems/chototcaodulieu",
+          "deep-dives/ai-infra-codebase"
         ]
       },
       {
@@ -63,7 +64,8 @@
           "internal-app/submissions-pricing-dual-price",
           "internal-app/bank-verification",
           "internal-app/role-permissions-matrix",
-          "internal-app/deposit-payout-engine"
+          "internal-app/deposit-payout-engine",
+          "deep-dives/internal-codebase"
         ]
       },
       {
@@ -81,7 +83,8 @@
           "mobile/s2s-operator-offer-buyer-found",
           "mobile/auth-zalo-apple",
           "mobile/auth-sns-otp",
-          "mobile/camera-hardware-bridging"
+          "mobile/camera-hardware-bridging",
+          "deep-dives/mobile-codebase"
         ]
       },
       {
@@ -90,14 +93,16 @@
           "scraper/chotot-pipeline-constants",
           "scraper/image-sync-s3",
           "scraper/proxy-rotation-anti-bot",
-          "scraper/parsing-deduplication"
+          "scraper/parsing-deduplication",
+          "deep-dives/chotot-codebase"
         ]
       },
       {
         "group": "AI Web Landing (TiMoto-AI-Web)",
         "pages": [
           "ai-web/waitlist-lambda",
-          "ai-web/landing-static-deploy"
+          "ai-web/landing-static-deploy",
+          "deep-dives/ai-web-codebase"
         ]
       },
       {
@@ -122,7 +127,9 @@
           "dealer-portal/orders-auctions-users-models",
           "dealer-portal/inventory-catalog-sync",
           "dealer-portal/migration-v1-to-v2",
-          "dealer-portal/escrow-deposit-flow"
+          "dealer-portal/escrow-deposit-flow",
+          "deep-dives/dealer-codebase",
+          "deep-dives/dealer-v2-client"
         ]
       },
       {
@@ -143,7 +150,8 @@
           "flows/rider-buy",
           "flows/ops-web-and-app",
           "flows/sell-to-instant-payout",
-          "flows/dealer-auction-vietqr"
+          "flows/dealer-auction-vietqr",
+          "deep-dives/cross-system-contracts"
         ]
       },
       {
