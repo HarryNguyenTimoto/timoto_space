@@ -6,4 +6,503 @@ description: "Detailed seven-project feature flows, route inventory, response ta
 
 # Complete Endpoint and Flow Catalog
 
-This page is being expanded from source evidence.
+This is the source-grounded implementation specification for the seven TiMoto project roots. It is intentionally operational: each feature is described as a stateful flow, each HTTP family is classified by ownership and authentication, and each route is mapped to its expected clean response, failure class, and side effect.
+
+<Note>
+  This catalog is derived from the checked-out Django URL modules, React clients, Lambda/control-plane code, Terraform, and existing Postman references. It is not a claim that every route is deployed on every environment. Treat a route as live only after a same-environment request succeeds with a current base URL, credentials, and correlation ID.
+</Note>
+
+## 1. System inventory and ownership
+
+| Project root | Product surface | Primary responsibility | Durable state or external dependency |
+| --- | --- | --- | --- |
+| timoto-mobile | Rider mobile app and rider API | Vehicle intake, OCR, evaluation, pricing, pickup, listing | Django models, object storage, JWT, notification providers |
+| timoto-internal-app | OPS web application and operator API | Review queue, fair-market-price decisions, pickup, purchase and payout operations | Django models, bank/payout callbacks, HMAC webhooks |
+| timoto-dealer-portal | Dealer portal and dealer API | Auctions, catalog, checkout, deposits, full payment, delivery | Django/SQL, VietQR, VNPay, dealer permissions |
+| timoto_dealer_portal_v2 | Dealer-facing v2 client | Alternate dealer UI and API client contracts | Verify target backend and route compatibility before changing |
+| TiMoto-AI-Web | Public marketing/waitlist web | Landing page, Android waitlist UX, product education | Browser state; waitlist Lambda exists separately and is not proven wired to the form |
+| chototcaodulieu | Market-data collection | Chotot listing/detail collection, image sync, quality filtering | DynamoDB, S3 CSV, SQS image worker |
+| AI_infra_timoto | AI repair/control plane | Sanitized incident intake, exact-target repair plans, isolated verification, signed artifacts, draft PR | S3/DynamoDB/Terraform/ECS metadata; control plane in ap-southeast-1 |
+
+The six application/data repositories are not one service. The seventh root, AI_infra_timoto, is a control plane with an approval boundary. It must not be described as an automatic production deployer.
+
+## 2. Canonical lifecycle flows
+
+### 2.1 Rider sell flow
+
+1. A rider registers or logs in through mobile auth.
+2. The app captures vehicle registration and photos.
+3. OCR extracts registration fields. The rider reviews and corrects fields.
+4. The app uploads images, video, audio, and recognition paper through upload endpoints. Presigned URLs are transport-only credentials and must not be logged.
+5. A bike submission is created and moves to an evaluation state.
+6. The evaluation service collects exterior, engine, price, and full-evaluation answers.
+7. A price-selection operation records the rider's selected path: instant sale, marketplace listing, or operator review.
+8. For instant sale, the rider confirms the listing; the operator later confirms or rejects the payout.
+9. For marketplace sale, the rider confirms the listing; the listing becomes visible only after server-side validation.
+10. Pickup is requested. Operations assigns an owner, inspects the vehicle, and records pickup completion.
+11. The system records sale history and feedback. Every transition must be idempotent for retries.
+
+### 2.2 Operator fair-market-price flow
+
+1. The internal app authenticates staff and loads the valuation queue.
+2. An operator opens a submission and reads the normalized bike facts plus AI review choice/report.
+3. The operator enters a price, rationale, and optional corrections.
+4. The submit endpoint validates the bike state, computes snapshot rates, resolves the SLA tracker, and emits the configured HMAC webhook.
+5. A clean response returns the persisted decision and correlation identifiers. A duplicate submission returns conflict semantics, not a second payout.
+6. The rejection path records a reason and exposes the next action to the rider or dealer.
+7. Webhook delivery is retried by the receiver using the event idempotency key.
+
+### 2.3 Dealer auction and purchase flow
+
+1. Dealer authenticates through the dealer portal.
+2. Dealer reads catalog and auction inventory, applying server-side filters.
+3. Dealer creates or joins an auction/order intent.
+4. Deposit is created. The API returns a checkout/payment reference; it must not claim money is received yet.
+5. VietQR or VNPay callback is verified independently from the browser redirect.
+6. The payment state changes only after signature and amount/order checks succeed.
+7. Full payment, delivery, notary, and remaining-payment steps advance the order state.
+8. A clean order response exposes the state machine; invalid transitions return conflict.
+9. Notification/device routes inform the dealer, but notifications are not the source of truth for payment.
+
+### 2.4 Public web waitlist flow
+
+1. The browser validates name, email, and phone format locally.
+2. The current landing form shows a success alert and clears state; source review found no network call from that form.
+3. The separate waitlist Lambda contract in docs-kb accepts a server-side request when wired by a deployment.
+4. Until a live request is observed, document the form as UX-only and do not promise persistence.
+
+### 2.5 Chotot market-data flow
+
+1. The daily collector requests Chotot v1 listing pages with the motorcycle category.
+2. Listing records are normalized and deduplicated into DynamoDB table chotot-xe-may.
+3. Detail calls enrich a listing and apply quality filters.
+4. Images are queued through SQS and copied by the worker; image failure must not erase the listing record.
+5. A weekly refresh checkpoint controls completeness. CSV exports are written to S3.
+6. No Aurora write was proven in the checked-out source; consumers must treat this dataset as market intelligence, not transaction inventory.
+
+### 2.6 AI repair flow
+
+1. An incident is accepted only for one of the six exact target applications.
+2. Intake is sanitized; stack traces, URLs, and credentials are redacted before persistence.
+3. The control plane binds the repair request to a source SHA and immutable target metadata.
+4. A plan is generated for a narrow change. The isolated runner executes tests in a disposable environment.
+5. The artifact is signed and attached to a draft pull request.
+6. A human reviews and merges. Production deployment remains a separate approval.
+7. Any request outside the allow-list is rejected with a safe error and no repository mutation.
+
+## 3. Response taxonomy
+
+### 3.1 Clean response classes
+
+| Class | Meaning | Required shape or rule |
+| --- | --- | --- |
+| 200 object | Read or successful mutation | JSON object from the view/serializer; preserve stable field names |
+| 200 list | Collection read | Prefer count, next, previous, results when the endpoint uses DRF pagination; otherwise document the actual list shape |
+| 201 created | New resource | Return identifier and canonical state; do not imply downstream payment or pickup completion |
+| 202 accepted | Asynchronous work | Return job/event identifier and polling or callback expectation |
+| 204 empty | Successful delete/logout/ack | Body must be empty; clients must not parse JSON |
+| 302 redirect | Browser payment return | Redirect is not payment confirmation; verify callback/IPN separately |
+| Binary | PDF or media download | Correct Content-Type, Content-Disposition, and bounded size |
+| Webhook ack | S2S callback | Fast 2xx acknowledgement after signature and idempotency checks; process asynchronously when possible |
+
+No global envelope was proven across all seven roots. Some endpoints return serializer objects, some return DRF validation dictionaries, some return message/status objects, and some return redirects or files. Client code must branch on status and content type rather than assuming one envelope.
+
+### 3.2 Error classes
+
+| Status | Classification | Client behavior |
+| --- | --- | --- |
+| 400 | Malformed request or business validation | Show field-level errors; do not retry unchanged payload |
+| 401 | Missing, expired, or invalid JWT/HMAC | Refresh token once where supported; otherwise sign in again |
+| 403 | Authenticated but not allowed by role/ownership | Stop retrying; show permission state |
+| 404 | Resource or route not found | Distinguish missing object from wrong base URL; log route fingerprint |
+| 409 | State conflict, duplicate idempotency key, already paid, already submitted | Re-read canonical state and reconcile |
+| 413 | Upload too large | Reduce media or use supported presigned upload |
+| 415 | Unsupported media type | Correct Content-Type and file type |
+| 422 | Semantic validation if emitted by a gateway/client | Display field errors; do not blindly retry |
+| 429 | Rate limit | Honor Retry-After and exponential backoff |
+| 500 | Unhandled application error | Retry only idempotent reads; attach correlation ID |
+| 502 | Upstream provider failure | Retry with bounded backoff; preserve pending state |
+| 503 | Maintenance or unavailable dependency | Surface degraded state; do not create duplicate order/payment |
+| 504 | Upstream timeout | Poll/reconcile before issuing a second command |
+
+Error bodies must be safe to expose. They may include a machine code, human detail, field map, correlation ID, and retryable flag. They must not include access tokens, HMAC secrets, presigned URLs after their useful lifetime, raw SQL, or provider credentials.
+
+## 4. Authentication and trust boundaries
+
+| Boundary | Credential | Verification |
+| --- | --- | --- |
+| Mobile rider | JWT access/refresh tokens | User identity, token expiry, ownership checks |
+| Internal OPS | Staff JWT/session and role | Staff role plus object-level permission |
+| Dealer | Dealer JWT/session | Dealer account, dealership, order ownership |
+| Browser payment return | Redirect query | Informational only; never final payment proof |
+| VietQR/VNPay callback | Provider signature plus amount/order checks | Idempotent callback processing |
+| Internal webhooks | HMAC with timestamp, nonce, and event id | Reject stale timestamp, bad signature, duplicate event |
+| AI repair intake | Signed internal request and allow-listed target | Sanitization, source SHA binding, human approval |
+| Chotot collection | Upstream HTTP client | Respect source terms, rate limits, and data retention policy |
+
+## 5. Complete route inventory: timoto-mobile
+
+Base prefixes are /api/v1/, /api/v1/auth/, /api/v1/upload/, /api/v1/options/, /api/v1/ocr/, /api/v1/evaluation/, and /api/v1/feedback/. Exact serializers and field names remain source-of-truth in backend route modules.
+
+### 5.1 Core bikes and marketplace
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/v1/bikes/ | JWT | Paginated bike list | 401; read-only |
+| POST /api/v1/bikes/ | JWT | 201 bike object | 400 validation; creates draft bike |
+| GET /api/v1/bikes/health/ | Public/internal | 200 health object | 503 dependency; no mutation |
+| GET /api/v1/bikes/marketplace/ | Public/JWT as configured | Paginated marketplace list | 400 filters; read-only |
+| GET /api/v1/bikes/marketplace/:bike_id/ | Public/JWT | 200 marketplace detail | 404; read-only |
+| POST /api/v1/bikes/marketplace/:bike_id/contact-requests/ | JWT | 201 contact request | 400/409 duplicate; creates lead |
+| POST /api/v1/bikes/marketplace/:bike_id/buy-intents/ | JWT | 201 buy intent | 400/409; creates buyer intent |
+| GET /api/v1/bikes/marketplace/filters/ | Public | 200 filter options | 200 empty options; read-only |
+| GET /api/v1/bikes/pickups/ | JWT/staff | Paginated pickups | 401/403; read-only |
+| POST /api/v1/bikes/pickups/ | JWT | 201 pickup request | 400/409 state conflict; creates pickup |
+| GET /api/v1/bikes/sale-history/ | JWT | Paginated sale history | 401; read-only |
+| GET /api/v1/bikes/operator-review-requests/ | JWT/staff | Paginated review requests | 403; read-only |
+| POST /api/v1/bikes/:bike_id/assign-owner/ | Staff | 200 bike/pickup state | 400/403/409; assigns owner |
+| GET /api/v1/bikes/:bike_id/evaluation/ | JWT | 200 evaluation | 404; read-only |
+| GET /api/v1/bikes/:bike_id/result/ | JWT | 200 valuation/result | 404/409 not ready; read-only |
+| POST /api/v1/internal/listings/:listing_id/buyer-found/ | Internal HMAC/staff | 200 acknowledgement | 401/403/404/409; advances buyer-found state |
+| GET /api/v1/bikes/ | Legacy router root alias | Same as core list | Treat duplicate route as compatibility alias |
+
+### 5.2 Evaluation and listing commands
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/v1/evaluation/health/ | Public/internal | 200 health | 503 dependency |
+| GET /api/v1/evaluation/bike/:bike_id/ | JWT | 200 evaluation context | 404 |
+| POST /api/v1/evaluation/exterior/ | JWT | 200 saved section | 400 field validation; persists answers |
+| POST /api/v1/evaluation/engine/ | JWT | 200 saved section | 400; persists answers |
+| POST /api/v1/evaluation/pricing/ | JWT | 200 saved section | 400; persists price inputs |
+| POST /api/v1/evaluation/full/ | JWT | 200/201 full evaluation | 400/409; persists complete evaluation |
+| GET /api/v1/evaluation/result/ | JWT | 200 current result | 404/409 pending; read-only |
+| GET /api/v1/evaluation/result/:bike_id/ | JWT | 200 result | 404/409 pending |
+| POST /api/v1/evaluation/operator-price/ | Staff/HMAC | 200 operator price | 400/403/409; records offer |
+| GET /api/v1/evaluation/operator-price/:bike_id/ | JWT/staff | 200 operator price | 404 |
+| POST /api/v1/evaluation/price-selection/:bike_id/ | JWT | 200 selected path | 400/409; changes sell path |
+| POST /api/v1/evaluation/listing/:bike_id/confirm/ | JWT | 200 listing state | 400/409; publishes or queues listing |
+| POST /api/v1/evaluation/listing/:bike_id/switch-to-instant/ | JWT | 200 instant-sale state | 400/409; state transition |
+| POST /api/v1/evaluation/listing/:bike_id/cancel/ | JWT | 200 cancelled state | 400/409; cancellation |
+| GET /api/v1/evaluation/listing/:bike_id/status/ | JWT | 200 listing status | 404 |
+
+### 5.3 Auth, upload, OCR, options, feedback
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| POST /api/v1/auth/check-user/ | Public | 200 existence/status | 400 |
+| POST /api/v1/auth/signup/ | Public | 201/200 signup state | 400 duplicate/validation |
+| POST /api/v1/auth/register/ | Public alias | Same signup contract | 400 |
+| POST /api/v1/auth/confirm-signup/ | Public | 200 confirmation | 400 invalid/expired OTP |
+| POST /api/v1/auth/resend-code/ | Public | 200 resend status | 429 throttled |
+| POST /api/v1/auth/login/ | Public | 200 JWT/session | 400/401 |
+| POST /api/v1/auth/login-otp/ | Public | 200 OTP login state | 400/401/429 |
+| POST /api/v1/auth/refresh/ | Refresh token | 200 new access token | 401 |
+| POST /api/v1/auth/mobile/login/ | Public | 200 mobile auth | 400/401 |
+| POST /api/v1/auth/mobile/verify-login-otp/ | Public | 200 JWT/session | 400/401/429 |
+| POST /api/v1/auth/mobile/signup/ | Public | 201 signup | 400 |
+| POST /api/v1/auth/mobile/send-otp/ | Public | 200 OTP status | 429 |
+| POST /api/v1/auth/mobile/verify-otp/ | Public | 200 JWT/session | 400/401/429 |
+| POST /api/v1/auth/mobile/refresh/ | Refresh token | 200 access token | 401 |
+| POST /api/v1/auth/push/register-token/ | JWT | 200 token registration | 400/409 |
+| POST /api/v1/auth/register-fcm-token/ | JWT alias | 200 token registration | 400/409 |
+| POST /api/v1/auth/forgot-password/ | Public | 200 reset initiation | 400/429 |
+| POST /api/v1/auth/verify-forgot-password-code/ | Public | 200 verification | 400/401 |
+| POST /api/v1/auth/reset-password/ | Reset proof | 200 reset status | 400/401 |
+| GET or POST /api/v1/auth/zalo/start/ | Public | Redirect or 200 state | 400/502 provider |
+| GET or POST /api/v1/auth/zalo/callback/ | Public | 200/redirect auth | 400/401/502 |
+| POST /api/v1/auth/zalo/native/ | Public | 200 auth | 400/401 |
+| POST /api/v1/auth/apple/native/ | Public | 200 auth | 400/401 |
+| GET /api/v1/auth/me/ | JWT | 200 profile | 401 |
+| GET /api/v1/auth/profile/ | JWT alias | 200 profile | 401 |
+| DELETE /api/v1/auth/account/delete/ | JWT | 204 or 200 deletion state | 401/409; destructive |
+| PATCH /api/v1/auth/update-store-info/ | JWT | 200 profile/store | 400/403 |
+| GET /api/v1/auth/store-size-choices/ | Public/JWT | 200 choices | read-only |
+| GET /api/v1/auth/store-scale-choices/ | Public/JWT alias | 200 choices | read-only |
+| POST /api/v1/upload/images/ | JWT | 201 upload records | 400/413/415 |
+| POST /api/v1/upload/videos/ | JWT | 201 upload records | 400/413/415 |
+| POST /api/v1/upload/audios/ | JWT | 201 upload records | 400/413/415 |
+| POST /api/v1/upload/recognition-paper/ | JWT | 201 upload record | 400/413/415 |
+| POST /api/v1/upload/presigned-url/ | JWT | 200 presigned URL | 400/403; short-lived credential |
+| POST /api/v1/upload/presigned-urls/batch/ | JWT | 200 URL list | 400/413 |
+| POST /api/v1/ocr/vehicle-registration/ | JWT | 200 extracted fields | 400/422/502 OCR provider |
+| GET /api/v1/options/brands/ | Public | 200 list | read-only |
+| GET /api/v1/options/models/ | Public | 200 list | 400 filter |
+| GET /api/v1/options/years/ | Public | 200 list | read-only |
+| GET /api/v1/options/mileage-options/ | Public | 200 list | read-only |
+| GET /api/v1/options/mileage/ | Public alias | 200 list | read-only |
+| GET /api/v1/options/document-types/ | Public | 200 list | read-only |
+| GET /api/v1/options/warranty-options/ | Public | 200 list | read-only |
+| GET /api/v1/options/warranty/ | Public alias | 200 list | read-only |
+| GET /api/v1/options/condition-options/ | Public | 200 list | read-only |
+| GET /api/v1/options/condition/ | Public alias | 200 list | read-only |
+| GET /api/v1/options/cities/ | Public | 200 list | read-only |
+| GET /api/v1/options/provinces/ | Public | 200 list | read-only |
+| GET /api/v1/options/price-range/ | Public | 200 range | read-only |
+| GET /api/v1/options/price-range-simple/ | Public | 200 range | read-only |
+| GET /api/v1/feedback/ | JWT | 200 feedback list | 401 |
+| POST /api/v1/feedback/ | JWT | 201 feedback | 400 |
+| GET /api/v1/feedback/:feedback_id/ | JWT | 200 feedback | 404 |
+| PATCH /api/v1/feedback/:feedback_id/read/ | Staff/JWT | 200 read state | 403/404 |
+| POST /api/v1/feedback/bug-report/ | JWT | 201 bug report | 400 |
+| POST /api/v1/bug-report/ | JWT alias | 201 bug report | 400 |
+| POST /api/v1/bug-reports/ | JWT alias | 201 bug report | 400 |
+
+## 6. Complete route inventory: timoto-internal-app
+
+The internal application maps Django routes under /api/. These routes mutate operational state and require stronger role and ownership checks than public mobile reads.
+
+### 6.1 Platform, auth, staff, and webhooks
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/ | Public/internal | 200 API index | read-only |
+| GET /api/health/ | Public/internal | 200 health | 503 |
+| GET /api/schema/ | Internal | 200 OpenAPI | 403 |
+| GET /api/docs/ | Internal | HTML/docs | 403 |
+| POST /api/auth/login/ | Staff public | 200 JWT | 400/401 |
+| POST /api/auth/refresh/ | Refresh token | 200 JWT | 401 |
+| POST /api/auth/logout/ | Staff JWT | 204/200 | 401 |
+| POST /api/auth/zalo/native/ | Staff public | 200 auth | 400/401 |
+| POST /api/auth/internal-login/ | Staff public | 200 auth | 400/401 |
+| POST /api/auth/register-fcm-token/ | Staff JWT | 200 token state | 400/409 |
+| POST /api/auth/push/register-token/ | Staff JWT alias | 200 token state | 400/409 |
+| GET /api/auth/me/ | Staff JWT | 200 staff profile | 401 |
+| GET /api/admin/staff/ | Admin | Paginated staff | 403 |
+| GET or PATCH /api/admin/staff/:staff_id/ | Admin | 200 staff | 400/403/404 |
+| POST /api/admin/staff/:staff_id/reset-password/ | Admin | 200 reset status | 403/404 |
+| POST /api/webhooks/tma/new-submission/ | HMAC | 2xx ack | 401/409 duplicate/400 |
+| POST /api/webhooks/bank/payout/ | Provider HMAC | 2xx ack | 401/409/400 |
+| POST /api/v1/mobile/operator-offer/ | HMAC/JWT | 200 offer ack | 401/409 |
+| POST /api/mobile/operator-offer/ | Compatibility alias | Same offer ack | 401/409 |
+
+### 6.2 Submissions and notifications
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/submissions/ | Staff JWT | Paginated queue | 403 |
+| GET /api/submissions/:submission_id/ | Staff JWT | 200 submission | 403/404 |
+| GET /api/submissions/:submission_id/pricing/ | Staff JWT | 200 pricing context | 403/404 |
+| POST /api/submissions/:submission_id/ai-review-choice/ | Staff JWT | 200 choice | 400/403/409 |
+| GET /api/submissions/:submission_id/ai-report/ | Staff JWT | 200 AI report | 403/404/409 pending |
+| POST /api/submissions/:submission_id/submit/ | Staff JWT | 200 persisted valuation | 400/403/409; HMAC side effect |
+| POST /api/submissions/:submission_id/reject/ | Staff JWT | 200 rejected state | 400/403/409 |
+| GET /api/notifications/ | Staff JWT | Paginated notifications | 401 |
+| POST /api/notifications/read-all/ | Staff JWT | 200 read count | 401 |
+| POST /api/notifications/:notification_id/read/ | Staff JWT | 200 read state | 404 |
+
+### 6.3 Bikes, valuation, vehicles, pickup, purchase
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/bikes/ | Staff JWT | Paginated bikes | 403 |
+| GET /api/bikes/:bike_id/ | Staff JWT | 200 bike | 403/404 |
+| GET /api/dashboard/ | Staff JWT | 200 dashboard metrics | 403 |
+| GET /api/valuation/queue/ | Staff JWT | Paginated valuation queue | 403 |
+| GET /api/valuation/bikes/:bike_id/ | Staff JWT | 200 valuation view | 403/404 |
+| POST /api/valuation/pricing/ | Staff JWT | 200 price draft | 400/403 |
+| POST /api/valuation/confirm/ | Staff JWT | 200 confirmed valuation | 400/403/409 |
+| GET /api/valuation/success/ | Staff JWT | 200 success summary | 403 |
+| GET /api/vehicles/ | Staff JWT | Paginated vehicles | 403 |
+| GET /api/vehicles/pending-sale/ | Staff JWT | Paginated pending sale | 403 |
+| GET /api/vehicles/:vehicle_id/ | Staff JWT | 200 vehicle | 403/404 |
+| POST /api/vehicles/:vehicle_id/sale-status/ | Staff JWT | 200 status | 400/409 |
+| POST /api/vehicles/:vehicle_id/sale/complete/ | Staff JWT | 200 completed sale | 400/409 |
+| POST /api/vehicles/:vehicle_id/sale/fail/ | Staff JWT | 200 failed sale | 400/409 |
+| GET /api/pickups/ | Staff JWT | Paginated pickups | 403 |
+| GET /api/pickups/:pickup_id/ | Staff JWT | 200 pickup | 403/404 |
+| POST /api/pickups/:pickup_id/inspection/ | Staff JWT | 200 inspection | 400/409 |
+| POST /api/pickups/:pickup_id/picked-up/ | Staff JWT | 200 picked-up state | 400/409 |
+| POST /api/pickups/:pickup_id/complete/ | Staff JWT | 200 completed pickup | 400/409 |
+| POST /api/pickups/:pickup_id/reject/ | Staff JWT | 200 rejected pickup | 400/409 |
+| GET /api/purchases/ | Staff JWT | Paginated purchases | 403 |
+| GET /api/purchases/:purchase_id/ | Staff JWT | 200 purchase | 403/404 |
+| POST /api/purchases/:purchase_id/bank/ | Staff JWT | 200 bank state | 400/409 |
+| POST /api/purchases/:purchase_id/inspection/ | Staff JWT | 200 inspection | 400/409 |
+| POST /api/purchases/:purchase_id/pass/ | Staff JWT | 200 passed state | 400/409 |
+| POST /api/purchases/:purchase_id/deposit/ | Staff JWT | 200 deposit state | 400/409 |
+| POST /api/purchases/:purchase_id/pay/ | Staff JWT | 200 payment state | 400/409 |
+| POST /api/purchases/:purchase_id/confirm-pickup/ | Staff JWT | 200 confirmation | 400/409 |
+| POST /api/purchases/:purchase_id/notary/ | Staff JWT | 200 notary state | 400/409 |
+| POST /api/purchases/:purchase_id/confirm/ | Staff JWT | 200 confirmed purchase | 400/409 |
+| POST /api/purchases/:purchase_id/remaining/pay/ | Staff JWT | 200 remaining payment | 400/409 |
+| POST /api/purchases/:purchase_id/complete/ | Staff JWT | 200 completed purchase | 400/409 |
+| POST /api/purchases/:purchase_id/reject/ | Staff JWT | 200 rejected purchase | 400/409 |
+
+## 7. Complete route inventory: timoto-dealer-portal
+
+The dealer backend exposes the modern /api/v1/ tree and compatibility aliases under /api/. Payment callbacks are deliberately split from browser-facing checkout creation.
+
+### 7.1 Root, auth, catalog, orders, auctions
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| GET /api/v1/ | Public | 200 API index | read-only |
+| POST /api/v1/auth/login/ | Public | 200 dealer JWT | 400/401 |
+| POST /api/v1/auth/signup/ | Public | 201 dealer | 400 duplicate |
+| POST /api/v1/auth/confirm-signup/ | Public | 200 confirmation | 400/401 |
+| POST /api/v1/auth/resend-code/ | Public | 200 resend status | 429 |
+| POST /api/v1/auth/forgot-password/ | Public | 200 reset status | 400/429 |
+| POST /api/v1/auth/verify-forgot-password-code/ | Public | 200 verification | 400/401 |
+| GET /api/v1/auth/me/ | Dealer JWT | 200 profile | 401 |
+| POST /api/v1/catalog/bikes/ | Dealer JWT/admin | 201 bike | 400/403 |
+| GET /api/v1/catalog/bikes/ | Dealer/public | Paginated catalog | 400 filters |
+| GET /api/v1/catalog/bikes/public/ | Public | Paginated public catalog | read-only |
+| GET /api/v1/catalog/filter-options/ | Public | 200 filters | read-only |
+| GET /api/v1/orders/ | Dealer JWT | Paginated orders | 403 |
+| GET /api/v1/orders/:order_id/ | Dealer JWT | 200 order | 403/404 |
+| POST /api/v1/auctions/ | Dealer JWT/admin | 201 auction | 400/403 |
+| GET /api/v1/auctions/ | Dealer JWT/public | Paginated auctions | 400 |
+| GET /api/v1/notifications/ | Dealer JWT | Paginated notifications | 401 |
+| POST /api/v1/notifications/:id/read/ | Dealer JWT | 200 read state | 404 |
+| POST /api/v1/devices/ | Dealer JWT | 201 device | 400/409 |
+| POST /api/v1/bikes/:bike_id/assessment/ | Dealer JWT | 200 assessment | 400/403/404 |
+| GET /api/v1/evaluations/bikes/:bike_id/ai-report/ | Dealer JWT | 200 AI report | 403/404/pending |
+
+### 7.2 Compatibility aliases and payment creation
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| POST /api/auth/login/ | Public alias | Same auth response | 400/401 |
+| GET /api/auth/me/ | Dealer JWT alias | 200 profile | 401 |
+| GET /api/ | Compatibility catalog root | 200/index or catalog | route-specific |
+| GET /api/orders/ | Dealer JWT alias | Paginated orders | 403 |
+| POST /api/payments/deposit/create/ | Dealer JWT | 201 checkout intent | 400/409 |
+| POST /api/payments/full-payment/create/ | Dealer JWT | 201 checkout intent | 400/409 |
+| POST /api/payments/dealer_order/create/ | Dealer JWT | 201 dealer order | 400/409 |
+| POST /api/payments/dealer-order/create/ | Alias | Same dealer order | 400/409 |
+| GET /api/payments/checkouts/ | Dealer JWT | Paginated checkouts | 403 |
+| GET /api/payments/checkout/:checkout_id/ | Dealer JWT | 200 checkout | 403/404 |
+| GET /api/payments/checkout/:checkout_id/qr/ | Dealer JWT | 200 QR/payment data | 404/409 |
+| GET /api/payments/status/:order_id/ | Dealer JWT | 200 payment state | 403/404 |
+| GET /api/payments/delivery/:order_id/ | Dealer JWT | 200 delivery state | 403/404 |
+| POST /api/payments/deposit/confirm/ | Dealer JWT/internal | 200 confirmed deposit | 400/409 |
+| POST /api/payments/full-payment/confirm/ | Dealer JWT/internal | 200 confirmed full payment | 400/409 |
+| GET /api/payments/deposit/:payment_id/pdf/ | Dealer JWT | PDF | 403/404 |
+| GET /api/payments/full-payment/:payment_id/pdf/ | Dealer JWT | PDF | 403/404 |
+
+### 7.3 VietQR, VNPay, and provider callbacks
+
+| Method and path | Auth | Clean response | Main errors and side effect |
+| --- | --- | --- | --- |
+| POST /api/token_generate | Provider credential | 200 provider token | 401/502 |
+| POST /api/token_generate/ | Provider credential alias | 200 provider token | 401/502 |
+| POST /bank/api/transaction-sync | VietQR signature | 2xx callback ack | 400/401/409 |
+| POST /bank/api/transaction-sync/ | Trailing-slash alias | 2xx callback ack | 400/401/409 |
+| GET /api/payments/vnpay/return/ | Browser redirect | 302/200 informational | never trust as final payment |
+| POST /api/payments/vnpay/ipn/ | VNPay signature | 2xx callback ack | 400/401/409 |
+| POST /api/payments/vietqr/callback/ | VietQR signature | 2xx callback ack | 400/401/409 |
+| POST /api/payments/deposit/callback/ | Compatibility callback | 2xx ack | 400/401/409 |
+| POST /api/payments/full-payment/callback/ | Compatibility callback | 2xx ack | 400/401/409 |
+
+## 8. Dealer v2, AI Web, Chotot, and AI infrastructure contracts
+
+### 8.1 timoto_dealer_portal_v2
+
+The v2 root is a client surface, not an independently proven backend. Before adding a route, capture the actual base URL and compare its generated client calls with the dealer backend above. Classify every call as one of:
+
+- exact modern /api/v1 match;
+- compatibility /api alias;
+- missing backend route;
+- unverified external service.
+
+A 404 from v2 must not be “fixed” by adding a duplicate route until the target host and deployment branch are verified.
+
+### 8.2 TiMoto-AI-Web
+
+| Route or operation | Auth | Clean response | Failure behavior |
+| --- | --- | --- | --- |
+| GET / | Public browser | 200 HTML/app | static hosting error |
+| GET /landingpage | Public browser | 200 HTML/app | static hosting error |
+| submitAndroidWaitlist | Browser state | Alert plus cleared form in current source | No network request proven; do not document persistence |
+| Waitlist Lambda contract | Server-to-server if deployed | 2xx acknowledgement | 400 validation, 409 duplicate, 5xx provider/storage |
+
+### 8.3 chototcaodulieu jobs
+
+These are scheduled/data-worker contracts rather than public HTTP routes.
+
+| Job | Input | Clean output | Failure policy |
+| --- | --- | --- | --- |
+| Daily v1 listing collector | Chotot listing pages, category cg=2020 | Normalized records in DynamoDB | Backoff, checkpoint, no destructive overwrite |
+| v2 detail enrichment | Listing identifiers | Enriched attributes and quality flags | Keep prior record, mark enrichment failure |
+| Image sync worker | SQS message with listing/image metadata | S3 object plus status | Retry; dead-letter after bounded attempts |
+| Weekly refresh checkpoint | Prior checkpoint and source page state | New checkpoint and completeness metrics | Resume from checkpoint |
+| CSV export | DynamoDB records | S3 CSV artifact | Preserve previous export on failure |
+
+### 8.4 AI_infra_timoto control-plane operations
+
+| Operation | Auth | Clean response | Failure and approval boundary |
+| --- | --- | --- | --- |
+| Incident intake | Signed internal caller | 202 intake id | 400 sanitized validation, 403 target not allow-listed |
+| Target resolution | Internal service | 200 exact repo/branch/SHA | 404 unknown target, 409 SHA drift |
+| Repair plan creation | Internal service | 201 immutable plan | 400 unsafe scope, 409 duplicate plan |
+| Isolated verification | Worker | 202 job id, then signed result | 5xx runner failure; no production mutation |
+| Draft PR artifact | Git provider integration | 201 draft PR metadata | 401/403 provider, 409 existing PR |
+| Merge/deploy | Human-only | outside control-plane contract | never automatic from the repair plan |
+
+## 9. Cross-project response and idempotency rules
+
+1. Every mutation accepts or generates an idempotency key. For payment and webhook commands, the key must be persisted before side effects.
+2. A retry after timeout must first read the canonical resource state.
+3. A 409 must include the current state or a URL to retrieve it where the source serializer allows.
+4. Browser redirects, push notifications, and UI alerts are hints, not durable truth.
+5. Payment callbacks must compare provider transaction id, local order id, amount, currency, and signature before marking paid.
+6. HMAC requests must bind method, path, timestamp, nonce, body hash, and key id. Reject stale timestamps and duplicate nonces.
+7. Paginated list endpoints must document ordering and cursor/page semantics. The absence of pagination metadata is a contract gap, not permission to infer it.
+8. Error logs must include correlation id, route fingerprint, status, retryability, and source project, but never tokens or raw payment payloads.
+9. A clean response must be stable across retries. If a command is asynchronous, return an operation id instead of pretending the final state is complete.
+10. A compatibility alias may share implementation, but it must be listed as an alias so clients can migrate deliberately.
+
+## 10. Route mismatches and verification backlog
+
+| Priority | Finding | Required evidence |
+| --- | --- | --- |
+| P0 | Payment callback and browser-return paths can be confused | Signed callback fixture, amount/order replay test, duplicate callback test |
+| P0 | AI repair must not be described as auto-deploy | Draft PR plus human approval record; no deploy credential in runner |
+| P0 | Mobile, internal, and dealer base URLs vary by environment | Environment matrix with current DNS/ALB and one authenticated smoke test |
+| P1 | Some mobile marketplace client calls appear newer than backend route files | Fresh FE call inventory and 404/200 replay against same deployment |
+| P1 | Waitlist form currently has no proven network call | Browser network trace or deployed Lambda integration test |
+| P1 | v2 dealer client may target a different backend contract | Generated client route diff and target-host confirmation |
+| P1 | Stale Postman aliases coexist with modern /api/v1 routes | Deprecation headers or migration page with sunset date |
+| P2 | Error envelopes differ by Django app | Contract tests for 400, 401, 403, 404, 409, 429, 500 |
+| P2 | Chotot source data has no proven Aurora sink | Explicit consumer contract or schema for downstream import |
+| P2 | Health endpoints do not prove dependency health | Readiness checks for DB, object storage, queue, and provider |
+
+## 11. Minimum contract-test matrix
+
+For every mutating endpoint, test:
+
+- valid request returns documented success status and content type;
+- missing authentication returns 401;
+- authenticated wrong role returns 403;
+- malformed body returns 400 with safe field errors;
+- unknown identifier returns 404;
+- duplicate command or invalid state returns 409;
+- provider timeout does not create a duplicate resource;
+- retry with the same idempotency key returns the same canonical result;
+- logs contain a correlation id and redact secrets.
+
+For every webhook, additionally test:
+
+- bad signature;
+- stale timestamp;
+- duplicate event id;
+- amount/order mismatch;
+- valid callback replay;
+- callback before local checkout row exists;
+- provider retry after a 5xx.
+
+## 12. Source links and change discipline
+
+Use the following pages as the detailed source references:
+
+- /apis/mobile-full-reference for timoto-mobile serializers, auth, DB effects, and JSON examples.
+- /apis/internal-full-reference for OPS transitions, valuation, pickup, purchase, and role checks.
+- /apis/dealer-full-reference for dealer SQL locks, checkout, VietQR, VNPay, and payment state.
+- /apis/exhaustive-api-matrix for the shorter cross-project matrix.
+- /architecture/seven-project-spec for project ownership, data boundaries, deployment regions, and non-API flows.
+- /systems/chototcaodulieu for collector and image-worker behavior.
+- /systems/timoto-ai-web for the current landing-page truth.
+- /systems/timoto-mobile and /systems/timoto-internal-app for runtime/deployment notes.
+
+Change this page when a route is added, removed, renamed, or changes success/error semantics. A route change is incomplete until the source URL module, client call site, response example, error test, and deployment base URL are updated together.
