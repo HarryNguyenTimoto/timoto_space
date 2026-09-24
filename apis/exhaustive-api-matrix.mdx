@@ -4,114 +4,63 @@ sidebarTitle: "Full API Matrix"
 description: "Source-grounded API families and cross-project contracts for six application repositories plus the AI infrastructure control plane."
 ---
 
-# API and integration contract matrix
+# API and Integration Contract Matrix
 
-This page is the navigational contract for the seven-project TiMoto system. It names route families and cross-project handoffs present in source. It deliberately does not fabricate a single payload schema where a serializer, raw SQL handler, webhook, or client expectation is the actual authority.
+This is the cross-project orientation matrix. For exact paths and handler methods, use the linked route ledgers; this page is not the endpoint source of truth.
 
-For request/response examples and line-level behavior, use the linked deep references. For ownership, state machines, and deployment boundaries, read the [Seven-project specification](/architecture/seven-project-spec).
+## API references
 
-## Host and authentication matrix
+| Project | Backend/client role | Deep reference |
+| --- | --- | --- |
+| timoto-mobile | Rider API, vehicle intake, evaluation, seller marketplace | /apis/mobile-route-ledger and /deep-dives/mobile-codebase |
+| timoto-internal-app | Staff OPS, valuation, pickup, sale, purchase and payout | /apis/internal-route-ledger and /deep-dives/internal-codebase |
+| timoto-dealer-portal | Dealer account, catalog, order, auction, checkout and payment | /apis/dealer-route-ledger and /deep-dives/dealer-codebase |
+| timoto_dealer_portal_v2 | Dealer frontend client and its typed API expectations | /deep-dives/dealer-v2-client |
+| TiMoto-AI-Web | Public React landing page; current forms are client-only | /deep-dives/ai-web-codebase |
+| chototcaodulieu | Scheduled scraper, image worker, export and dashboard data | /deep-dives/chotot-codebase |
+| AI_infra_timoto | Sanitized incident intake, isolated repair, signed artifact and draft PR | /deep-dives/ai-infra-codebase |
 
-| Surface | Staging | Production | Primary auth | Notes |
-| --- | --- | --- | --- | --- |
-| Rider API | api-staging.timoto.ai | api.timoto.ai | Cognito/JWT for rider routes; selected auth/OCR/options paths are public | WebSocket/realtime uses a rider token on the connection path. Confirm deployed route prefixes before testing. |
-| OPS API | internal.timoto.ai | prod-internal.timoto.ai | Phone/password HS256 JWT; refresh blacklist; OPS/ADMIN distinction | This is not the rider Cognito domain. |
-| Dealer API | staging.dealer.timoto.ai | dealer.timoto.ai | Dealer Cognito JWT, Zalo OAuth bootstrap, and scoped S2S keys/HMAC | Dealer browser and dealer backend are separate repositories. |
-| AI Web | — | timoto.ai | Public browser | Current Vite landing routes do not call a valuation API. |
-| Chotot data | Lambda/EC2 jobs | Lambda/EC2 jobs | AWS task/runtime credentials | Chotot gateway calls are not product API calls and do not write Aurora. |
-| Repair control plane | AWS control plane | AWS control plane | IAM task roles, Cognito/API Gateway read scope, signed artifacts | It observes registered targets and may create draft PRs; it does not merge/deploy. |
+## Shared integration edges
 
-## Rider API — timoto-mobile
-
-Detailed reference: [Mobile API deep reference](/apis/mobile-full-reference).
-
-| Family | Representative routes | Auth | Side effects and contract |
+| Source | Destination | Transport/data | Durable truth |
 | --- | --- | --- | --- |
-| Mobile auth | /api/v1/auth/mobile/signup/, send-otp/, verify-otp/, login/, verify-login-otp/ | Mostly AllowAny during bootstrap | Pending-user row, SNS OTP in ap-southeast-1, Cognito provisioning and rider JWTs. Temporary/dev credentials are server-side concerns. |
-| Social auth | /api/v1/auth/zalo/native/, /api/v1/auth/apple/native/, plus Zalo start/callback paths | AllowAny bootstrap, provider verification | Validates provider identity, then provisions or authenticates the Cognito rider. |
-| Options | /api/v1/options/brands, models, years, price-range | Public in current source | Static option lists and an FMP-based preliminary range. This is not a final operator price. |
-| Bikes | /api/v1/bikes/, detail/update, pickup schedule | Authenticated | Creates/updates bike records, media references and pickup records. Draft, evaluation-pending, reviewed, listed and sale states are distinct. |
-| Media | presigned URL and batch media routes | Verify current permission per route | Issues S3 upload URLs and records media. The presign boundary needs ownership and abuse controls. |
-| Evaluation | /api/v1/bikes/{id}/evaluate/async/, evaluation result/legacy routes | Authenticated production path; legacy paths differ | Production app path is asynchronous and calls the separate gRPC AI service; it can return 202 while work continues. |
-| OCR | /api/v1/ocr/vehicle-registration/ | Confirm current permission in deployed settings | On-device OCR is primary in the app; backend/Gemini behavior is a fallback contract. |
-| Marketplace/listing | marketplace list/detail, price selection, listing confirm, buyer-found callback | Mixed public/authenticated/S2S | Eligibility combines mobile listing state and internal submitted pricing. Buyer-found callback is HMAC-bound. |
-| Feedback | /api/v1/feedback/ | IsAuthenticated | One row per user; second submission is rejected by the unique constraint. |
-| Realtime | operator-review request and WebSocket | Rider token on connection | ORR assignment, valuation_ready, valuation_rejected; timeout and consumer state must be checked independently of HTTP 200. |
+| Rider app | Mobile Django | JWT/auth + JSON/multipart | Django bike/evaluation/media rows |
+| Mobile Django | Internal OPS | HMAC webhook or mirrored DB/outbox | Receiver row plus sender event/outbox status |
+| Internal OPS | Mobile Django | signed operator offer/completion event | pricing decision and mobile result record |
+| Internal OPS | Dealer catalog | conditional publish/sync | dealer combo/catalog row |
+| Dealer backend | VietQR/VNPay | checkout intent and signed callback/IPN | local checkout/payment after verified callback |
+| Chotot collector | DynamoDB/S3/SQS | scheduled HTTP ingestion and object jobs | listing ID, refresh checkpoint and image state |
+| Backend observability | AI repair control plane | trusted CloudWatch binding and sanitized 5xx event | incident state bound to target and release SHA |
+| AI control plane | GitHub | verified artifact, repair branch, draft PR | signed artifact plus durable publication receipt |
 
-## OPS API — timoto-internal-app
+These edges use different databases and authentication schemes. Do not infer one universal API prefix, user ID, error envelope or transaction boundary.
 
-Detailed reference: [Internal Ops API deep reference](/apis/internal-full-reference).
+## Contract status labels
 
-| Family | Representative routes | Auth | Side effects and contract |
-| --- | --- | --- | --- |
-| OPS auth | /api/auth/login/, refresh/, logout/, me/ | Public login; JWT thereafter | Access/refresh behavior and blacklist backend are environment configuration. |
-| FCM | /api/auth/register-fcm-token and trailing-slash variant | Authenticated | Multi-device registration with a cap; delivery is asynchronous. |
-| Submissions/pricing | /api/submissions/{bike_id}/submit/ and read paths | Authenticated OPS | Operator enters FMP; server snapshots listing and instant prices on submit. Mobile operator-offer read is a separate HMAC boundary. |
-| Pickups | waiting/schedule, PATCH schedule, inspection draft, picked-up, reject | Authenticated OPS | Reads TMA mirrors, writes operational state and selected user_db_write records; rejection reasons have validation rules. |
-| Purchases/instant sell | purchase detail, bank, deposit, remaining, notary, complete/reject | Authenticated OPS/ADMIN as required | Checklist and payout state machine. Deposit/remaining rails can be stub, async-stub or HTTP. |
-| New submission webhook | POST /api/webhooks/tma/new-submission/ | X-Timoto-Signature HMAC | Requires a valid signature and bike_id; creates/updates SLA tracking and notification, then best-effort FCM fanout. |
-| Bank payout webhook | POST /api/webhooks/bank/payout/ | HMAC | Applies an exact payout event only after signature and state checks. |
-| Admin staff | /api/admin/staff/\* | ADMIN role | Role boundary is OPS vs ADMIN; no generic object-level RBAC claim in current source. |
+- Declared: route appears in a backend URL module.
+- Called: frontend has a method/path call.
+- Matched: client path resolves to the intended backend handler.
+- Tested: a test asserts status/body/side effect.
+- Environment verified: same environment was reached with current credentials.
+- Proposed: new standard or behavior, not current source behavior.
 
-## Dealer API — timoto-dealer-portal
+Only say an endpoint is live when the last status is supported by fresh environment evidence. API references include client/backend mismatches and known path drift.
 
-Detailed reference: [Dealer API deep reference](/apis/dealer-full-reference).
+## Response classification
 
-| Family | Representative routes | Auth | Side effects and contract |
-| --- | --- | --- | --- |
-| Dealer auth | Cognito signup/login/profile plus /api/auth/zalo/login/ and callback | Public bootstrap + Cognito/Zalo | Source contains a development confirmation-code path; do not treat it as production SMS proof. |
-| Catalog/bikes | catalog ViewSets, bike detail, AI report, assessments | JWT or public catalog subset | AI report reads an unmanaged BikeEvaluationResult shape through a parser; do not assume the Type-2 evaluation model is the endpoint source. |
-| Dealer orders | /api/v1/orders/, :id/cancel/, :id/receive/, :id/pay/, :id/invoice/, :id/reorder/ | Authenticated dealer | Delivery and payment statuses are independent. Cancel is blocked after paid; invoice requires delivered and paid; reorder is from cancelled. |
-| Auctions | list/detail, place bid, fast bid, watch/unwatch | Authenticated dealer | GET list may finalize expired auctions and create notifications. Minimum bid increment and payment windows are source rules. Concurrent bid safety needs PostgreSQL proof. |
-| Checkout/VietQR | shared checkout, deposit/full payment creation, callbacks/IPN | JWT plus S2S/callback boundaries | Callback validates order recipe, amount and state. Duplicate callbacks must be harmless. |
-| Inventory S2S | bike-unavailable, reserve/release helpers, paid-order hooks | Service key/HMAC | Catalog Combo activation/quantity and mobile bike-sold notification are separate state transitions. |
-| Notifications | list, unread count, mark read/unread, device registration | JWT/OneSignal | Auction GET can create deadline notifications; SPA has limited/no REST notification client in source. |
-| Evaluations | bike assessment and AI report endpoints | JWT/public by endpoint | Keep BikeAssessment, BikeEvaluation SCD and unmanaged AI result semantics separate. |
+Use /apis/response-contracts-evidence for success/error semantics. There is no proven shared envelope across the seven roots. Each endpoint page needs its own success status/body/content type, error body, auth, side effect, retry/idempotency and test evidence. Browser redirect, QR display, websocket notification, and UI alert do not establish final payment, evaluation, or waitlist state.
 
-## Dealer browser — timoto_dealer_portal_v2
+## Current highest-risk contract gaps
 
-This repository is a Vite/React SPA, not a Django service and not a second API owner.
+1. Mobile client marketplace purchase/order/payment paths are not declared in the inspected mobile Django URL modules; identify their actual owner.
+2. Mobile /auth/me/ GET and update functions are declared as two same-path URL entries; resolver ordering likely shadows the later update handler and should be tested.
+3. Dealer has modern /api/v1 routes and legacy /api aliases; verify both against the same permissions and payment semantics.
+4. VietQR/VNPay callback settlement must be idempotent and amount/signature bound; browser return is not settlement.
+5. Internal OPS write/outbox delivery are separate durability events.
+6. AI repair publication stops at draft PR; human approval owns merge/deploy.
+7. AI Web waitlist/email forms currently show local feedback without server persistence.
+8. Chotot advertisements are external market data, not transaction inventory.
 
-- Build scripts are build, build:staging, and build:production; configuration is injected through VITE\_\* values.
-- Axios wrappers live under frontend/src/api/; route declarations and wrapper methods are client expectations, not proof that the backend route is mounted.
-- Auth uses stored tokens and an interceptor. The source distinguishes the token used for login detection from the token attached to API requests; check request flags when a user looks logged in but receives 401.
-- The SPA includes auth, catalog/bike, order, payment, AI-report and Zalo callback screens. Client reminder timers in local storage are not the server notification inbox.
-- nginx serves the static bundle and SPA fallback. Deployment evidence must include the built image, API base, nginx config and matching dealer backend host.
+## Change procedure
 
-Detailed behavior is covered by [v1/v2 split](/dealer-portal/migration-v1-to-v2) and [SPA user cache/reminders](/dealer-portal/spa-user-cache-reminders).
-
-## Public landing — TiMoto-AI-Web
-
-Detailed references: [Landing static deploy](/ai-web/landing-static-deploy) and [waitlist Lambda](/ai-web/waitlist-lambda).
-
-- The checked-in frontend is Vite + React 18 with only / and /landingpage routes.
-- It contains marketing copy, app-store links and an Android waitlist modal.
-- submitAndroidWaitlist currently validates that phone or email is present, shows a browser alert, clears local state, and closes the modal. It does not call API Gateway, Lambda, DynamoDB, or a dealer/mobile evaluation API.
-- The separately documented waitlist Lambda accepts phone/email, normalizes Vietnam phone values, queries phone/email GSIs, and returns 201 for a new item or 200 for a duplicate. Query-then-Put is not a strong uniqueness guarantee.
-- Do not describe this repository as the AI valuation engine. The valuation path is mobile plus the separate gRPC service.
-
-## Market-data pipeline — chototcaodulieu
-
-Detailed references: [pipeline constants](/scraper/chotot-pipeline-constants), [parsing and deduplication](/scraper/parsing-deduplication), and [image sync](/scraper/image-sync-s3).
-
-- Listing API: Chotot v1 listing endpoint with motorcycle category cg=2020, page size 50 and bounded retries.
-- Detail API: v2 listing detail fetch with a bounded worker pool. Missing detail is recorded as a miss and not treated as a valid bike.
-- Daily path: scrape yesterday in Vietnam time, upsert raw records to DynamoDB chotot-xe-may, and optionally write UTF-8-BOM CSV to S3.
-- Weekly path: scan only list_id, refresh details in bounded batches, persist a checkpoint, and asynchronously self-invoke when the 780-second budget is reached.
-- Quality export requires active/accepted status, price range, title length, image, region, seller and list time. It emits a raw per-bike report, not an Aurora import.
-- Current source uses standard headers and retry/backoff. There is no verified proxy list, residential proxy pool or proxy-rotation implementation in the reviewed code.
-- Image-sync producer/worker turns DynamoDB records into SQS jobs, downloads source URLs, writes the dashboard bucket and tracks state.
-
-## Incident-repair control plane — AI_infra_timoto
-
-Detailed reference: [AI Repair Foundation](/architecture/timoto-ai-repair-foundation).
-
-The registered target identity is derived from timoto_repair/registry.py, not from an incident payload. Intake normalizes accepted 5xx event shapes, deduplicates event IDs, and groups route evidence conservatively. The source broker obtains a full release SHA and bounded backend snapshot; the repair/model runner receives no GitHub credential. Independent tests and verifier receipts are required before a signed artifact and draft PR. The publisher can create a draft PR only; merge, deployment, rollback and production data changes remain human-controlled.
-
-## Contract hygiene rules
-
-1. Use the route and serializer in the owning repository as the API authority; treat client wrappers and old Postman collections as expectations until tested.
-2. For every cross-project write, record source ID, destination ID, auth proof, idempotency key, response, and durable state change.
-3. Keep staging and production host, region, task definition, image digest and database alias explicit.
-4. Never place customer media, raw tokens, HMAC secrets or unbounded logs into model context, PR bodies, Jira descriptions or browser payloads.
-5. A passing local suite, HTTP 200, running ECS task, Jira key or PR URL is evidence of one step only—not proof of end-to-end business correctness.
+When an API changes, update backend route, view/schema, frontend caller/type, route ledger, response example, error fixture and integration test together. Record repository commit and environment. For a cross-repo call, record caller, base URL, target service, credential, idempotency and reconciliation owner.

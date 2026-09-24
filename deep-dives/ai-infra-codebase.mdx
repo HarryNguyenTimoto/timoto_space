@@ -96,3 +96,25 @@ App services emit structured API request/exception events with route template, m
 ## Acceptance cases
 
 Test unknown/spoofed source, redaction of tokens/URLs/PII, duplicate event, time bucket boundary, concurrent same-repo incidents, two global slots, stale lease and stale task result, RunTask ambiguous response, immutable SHA, source manifest tamper, patch path traversal/symlink, no-network sandbox, baseline regression failure and candidate pass, modified test rejection, unsigned artifact, invalid KMS signature, duplicate PR publication, branch mismatch, publisher crash after external side effect and operator approval expiry.
+
+## Concrete validation constraints
+
+registry.py is the trusted mapping of six targets: dealer-staging and dealer-production share dealer repository; internal-staging/internal-production share internal repository; mobile-staging/mobile-production share mobile repository. Host identity and source logs map the environment; caller-provided target_id must not override that mapping.
+
+intake.py only accepts api_request/api_exception 5xx evidence with known safe keys, integer timestamp, permitted method, canonical route and bounded sanitized stack frames. The incident digest is based on target, release SHA, route, method and 15-minute timestamp bucket. Distinct events retain event_id markers; duplicate event ingestion is idempotent. Evidence samples are capped at 20 and exceptions can replace request summaries so diagnostic events are not crowded out.
+
+RepairContract in execution.py requires a full 40-character SHA, exact target/repository, verified auth survives restart, disabled extra-credit behavior, isolation, no production credentials, verified deploy binding, approved model slug and trusted Python test argv. Patch paths are capped at 20 unique paths under backend root, only Python files, no migrations/config/symlink/traversal. Result validation requires model SUCCESS, passing tests, baseline failure and an added regression. These are preconditions, not proof Terraform runtime realizes every property.
+
+## State and lease invariants
+
+dispatch.Jobs.claim takes DynamoDB transactions on one of two SLOT rows and a per-repository lock, then conditionally changes QUEUED to LAUNCHING and binds immutable RunTask request parameters, lease token, slot and deadline. Attempt cap is two. A launch ambiguity moves to RECONCILE_REQUIRED; the dispatcher searches tasks by startedBy token and only resumes if exactly one matching task can be verified. A stopped receipt binds incident, lease token and task ARN, releases both locks transactionally and moves to RESULT_PENDING. Lease timeout alone never releases slot/repo lock.
+
+This intentionally prefers safety over throughput. A stuck ambiguous incident requires trusted task reconciliation rather than manual lock deletion. Document operator procedure from the live runbook before modifying a lock.
+
+## Artifact and publication protocol
+
+verifier.py accepts only supported schema versions and validates incident, target, repository, lease and source SHA. Candidate JSON size is bounded. The verifier canonicalizes artifact payload, asks KMS to sign SHA-256 using ECDSA_SHA_256, writes final signed object under target/incident/lease prefix, and verifies signatures on existing signed artifacts. ARTIFACT_READY triggers a deterministic ECS publisher task. PR_PENDING timeout is reconciled against ECS and Git receipt; retry reuses the deterministic token. Publisher can push the bound repair branch and open a draft PR; merging and deployment remain separate.
+
+## Approval and deployment layer
+
+SQLite reference control.py has reviewer approval bound to PR head SHA, action=deploy, expected deployed revision and source SHA, with maximum one-hour expiry. Begin deploy rejects target drift or another active deployment; deploy receipt updates observed source/revision; verify checks health and incident signals; failure leads to ROLLBACK_REQUIRED. This is a reference controller contract. Do not assume deployed Lambda/ECS wiring exposes this entire flow until readiness evidence confirms it. README distinguishes live intake/publisher/source broker from disabled dispatcher schedule and dependency-complete target test gates.

@@ -113,3 +113,42 @@ There are Helm/ECS/deployment scripts in the root. The existence of staging/prod
 ## Acceptance matrix
 
 Use tests for anonymous/public catalog, dealer catalog ownership, checkout not paid until callback, valid signature, invalid signature, wrong amount, duplicate callback, callback before checkout, provider timeout after checkout create, receipt authorization, PDF content type, order action permissions, auction concurrent bids, and transaction rollback. For API docs, each row should capture method, path, auth class, query/body schema, success status/content type, error body, DB write(s), external call, idempotency key, and test name.
+
+## Checkout response model and failure boundaries
+
+backend/payments/checkout_views.py exposes checkout create/detail/QR operations. Model the checkout as a local state machine with a stable checkout_id, order/auction reference, amount, payment provider and status. QR response must be tied to that checkout and have a bounded validity window. A second QR request should either return/reuse active instructions or create a new provider attempt with an explicit attempt identity; never create two local paid transitions.
+
+Keep the response types separate:
+
+- create checkout: persisted pending checkout and provider intent/reference;
+- checkout detail: canonical local status;
+- QR: instructions/data only;
+- VNPay return: browser-facing result/redirect;
+- IPN/VietQR callback: signed settlement evidence;
+- confirmation page/PDF: receipt derived from settled local row;
+- delivery endpoint: fulfilment state after payment and order validations.
+
+Each is a different contract even if UI calls them all “payment.” Error mapping should retain machine-readable provider codes while stripping credentials and raw signature. A provider timeout after checkout creation is ambiguous; GET checkout by local ID before retry.
+
+## Callback correctness matrix
+
+For VietQR and VNPay handlers, test all of:
+
+1. valid signature, exact amount/order, first delivery -> one payment transition;
+2. same callback repeated -> same durable result or documented duplicate acknowledgement;
+3. wrong amount/currency/order/merchant -> reject and do not set paid;
+4. invalid or missing signature -> reject before business mutation;
+5. callback before local row or unknown order -> safe error and operator reconciliation;
+6. race between two identical callbacks -> one settlement row/update;
+7. malformed payload or provider outage -> bounded response with no false paid state;
+8. browser return arrives before IPN -> show pending/processing and refresh canonical order.
+
+The source route mount includes both versioned and legacy /api/payments/; run identical tests through each mount and compare policy. The official bank callback paths at /bank/api/transaction-sync may have a distinct payload and auth contract; do not alias assumptions across providers.
+
+## Order action flags
+
+V2 TypeScript response has can_cancel, can_receive, can_pay, can_get_invoice and can_reorder. These booleans are UX hints. The backend must recalculate legality at mutation time under a transaction; order state can change between list read and button click. A disabled button is not authorization. Contract tests should send forbidden commands directly and assert no change to order or payment rows.
+
+## Data lineage
+
+Combo is the catalog aggregate; Order is the dealer transaction aggregate; checkout is the payment attempt; auction is the competitive allocation; bike is the physical item. Preserve the join keys separately. A buyer order referencing combo_id should snapshot price/name/media at purchase time or otherwise define how catalog edits affect active orders. That answer must be proven from order create code/model before documenting repricing behavior.

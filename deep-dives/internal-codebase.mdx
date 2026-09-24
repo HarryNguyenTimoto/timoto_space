@@ -149,3 +149,19 @@ The frontend can hide controls but only server-side permissions enforce roles. A
 ## Contract-test checklist
 
 Test each transition from valid and invalid predecessor states; wrong role and wrong object ownership; duplicate webhooks; HMAC mismatch; bank amount mismatch; outbox transient failure then success; stale lease; no double publication; exact rate snapshot retained after configuration changes; sale fail then forbidden complete; complete pickup then sale pending; full purchase rejection after terminal completion. A passing API response is not sufficient without reading the persisted row and downstream event receipt.
+
+## FMP persistence and delivery order
+
+Backend/bikes/submissions_api.py is the command owner for operator submit/reject. Pricing helper tipp_pricing.py snapshots the active TIPP/market multiplier/fee settings so historic decisions can be explained after configuration changes. realtime_bridge.py persists the mobile completion event to UserCompletionOutbox before delivery. Its claim methods take a lease, mark successful emission or failure, and cap retry attempts; a scheduled/management worker can process the next eligible row. The write commit and TMA HTTP call are distinct events. Operational dashboards should expose pricing_saved, outbox_pending, emitted, retry_exhausted separately.
+
+The mobile endpoint expects a signed operator offer read. mobile_operator_offer_views.py computes/verifies HMAC over bike ID and operator-review request ID using configured secret. The internal callback should never trust those IDs from a body without signature and correlation check. A changed/replayed request ID must not return an unrelated valuation.
+
+## Pickup and purchase UI projections
+
+purchases_api.py contains its own UI status/step derivation. It resolves latest pickup schedule and BikeSaleRecord, maps appointment date/time slots to Vietnam timezone, and creates list/detail payloads. This is a compatibility/read-model layer: a field in purchase response may be derived, not persisted on a Purchase row. Operators should understand that changing pickup schedule can change display step. Keep response fields with provenance where audit matters.
+
+sale.py has guards can_mark_sale_pending and can_mark_sale_failed, helpers to ensure sale record exists from completed pickup, and mark_sale_complete/mark_sale_failed. Listing publication is a separate helper that checks gas fuel/price and configuration; successful sale transition can trigger catalog combo upsert. A dealer sync failure should become an actionable integration error/retry rather than undoing verified custody/sale facts.
+
+## Exact tests to bind to behavior
+
+The API contract suite should assert the path-specific role matrix, field errors, timestamps/timezone, state predecessor, emitted outbox event, HMAC payload bytes, retry count and duplicate handling. Add database transaction assertions: invalid transition writes nothing; valid transition writes one audit/state record; callback failure leaves outbox recoverable; retry emits same event identifier; stale lease cannot mark delivery success. Sale-complete tests should assert exact catalog behavior for eligible/ineligible fuel type and feature flag on/off.

@@ -78,3 +78,21 @@ Each run needs run_id, target date/range, requested/listed/detail-success/detail
 ## Acceptance scenarios
 
 Test duplicate listing ingestion, changed detail payload, absent detail, invalid JSON, 429/5xx retries, partial DynamoDB batch, checkpoint resume, dry run, reset, time-budget self-chain, concurrent worker behavior, SQS duplicate delivery, poison image, DLQ, export duplicate suppression, upload failure and CDN invalidation ordering. Fixture tests should avoid live Chotot/AWS calls by default and record which smoke tests are live.
+
+## Daily scraper record contract
+
+chotot.py uses v1 /public/ad-listing for IDs and v2 /public/ad-listing/:list_id for detailed raw payload. It computes Vietnam day boundaries and fetches details through a shared requests.Session with retry adapter. Keep event time (source list_time), collection time (scraped_at) and detail refresh time separate. The natural identity is source list_id. Upsert should be repeatable: same listing/day does not add duplicate rows, later detail can update its raw payload.
+
+Represent stages explicitly: discovered, detail_fetched, normalized, quality_passed/failed, persisted. If detail fetch fails, do not call the listing fully enriched. If an ad disappears upstream, do not delete historic row unless retention policy requires it. Stable failure reason codes support replay and quality reporting.
+
+## Image synchronization protocol
+
+Producer and worker are separate programs/Lambdas. Each SQS record must be independently idempotent so redelivery cannot create duplicate logical media. Deterministic S3 keys should include list ID, media role/index and source hash or equivalent. Enforce URL host allowlist, HTTPS, private-network rejection, maximum redirects, content length/type and download timeout before writing. Store expected/complete/failed image counts with status table. Queue depth alone does not say whether images are complete; compare source count, completed count, retry count and DLQ.
+
+Monitor_image_sync.py reports queue and state metrics at different cadences: queue polling is frequent; full state/S3 counts are less frequent to avoid expensive scans. Treat resulting dashboard metrics as sampled counts, not instantaneous inventory.
+
+## Export freshness and corruption safety
+
+Full JSONL exporter combines a pinned historical snapshot with recent DynamoDB rows. It transforms image URLs to S3 locations, deduplicates by listing ID, emits full and sample artifacts plus metadata, uploads to S3 and may invalidate CloudFront. Use temp file -> validate gzip/JSONL/count/hash -> upload final object -> verify HEAD/checksum -> then invalidate. Historical export scripts have operator-machine file paths and explicit overwrite behavior; inspect exact command side effects before running.
+
+A metadata file should record source snapshot key/hash, DynamoDB watermark, inclusion window, unique row count, rejected rows, image rewrite version and export timestamp. This permits consumer reconciliation and avoids silently serving a partial file as complete.
