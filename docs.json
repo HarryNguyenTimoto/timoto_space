@@ -165,7 +165,8 @@
           "apis/exhaustive-api-matrix",
           "apis/mobile-full-reference",
           "apis/internal-full-reference",
-          "apis/dealer-full-reference"
+          "apis/dealer-full-reference",
+          "apis/complete-endpoint-catalog"
         ]
       },
       {
