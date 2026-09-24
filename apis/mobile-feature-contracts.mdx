@@ -1,0 +1,125 @@
+---
+title: "Mobile Feature/API Contracts"
+sidebarTitle: "Mobile feature contracts"
+description: "Feature-level API, state transition, source ownership, success/error behavior and reconciliation specification."
+---
+
+# Mobile Feature/API Contracts
+
+This appendix turns mobile flows into implementation contracts. Exact route existence comes from backend URL modules. Exact request/response behavior comes from handler branches; unknown fields/statuses are called out instead of filled by guess.
+
+## A. Identity and onboarding
+
+### Check user
+
+- Route: POST /api/v1/auth/check-user/
+- Source: backend/apps/users/urls.py -> check_user in users/views.py.
+- Auth: AllowAny.
+- Request: identifier (phone or email); missing value returns HTTP 400 and an error message.
+- Success: HTTP 200 with exists and is_pending booleans. A normalized phone is checked against Cognito and CustomUser; PendingUser is only checked for phone and must be unexpired.
+- Side effects: no identity create; Cognito lookup may fail and is swallowed, then Django tables are checked.
+- Privacy: response intentionally exposes existence. Add rate limiting/abuse controls and generic client copy to reduce enumeration risk.
+- Interpretation: exists=false means this endpoint did not find a current identity in its checked sources; it is not proof a third-party identity does not exist.
+
+### Signup
+
+- Route: POST /api/v1/auth/signup/; POST /api/v1/auth/register/ aliases the same view.
+- Auth: AllowAny; IP limiter 3 requests/hour.
+- Request: phone_number or phone; optional email, name, password. Missing password gets a development/Postman default in source, which must never be interpreted as secure production account policy.
+- Flow: normalize phone, check existing CustomUser, return HTTP 200 login handoff when already registered; otherwise replace old PendingUser for phone and create pending record expiring after 24 hours.
+- Errors: missing/invalid phone -> 400. Handler branches also map selected Cognito exceptions to 404/403, although the PendingUser ORM create location means verify exception coverage carefully.
+- Success status: 200 for existing account handoff or default DRF success for PendingUser path. Extract exact status/body from the complete handler; do not assume 201.
+- Durable result: PendingUser exists; no confirmed Cognito user yet.
+
+### OTP confirmation and login
+
+confirm-signup: POST /api/v1/auth/confirm-signup/. mobile/signup aliases signup. mobile/send-otp: POST with pending_id, alternatively phone_number lookup in forgiving path; limited to 5/minute. mobile/verify-otp: POST with pending_id or phone_number plus otp_code; limited to 10/minute. mobile/login and mobile/verify-login-otp are separate login challenge handlers. refresh and mobile/refresh are different refresh handlers. Do not interchange refresh token, access token and Cognito ID token.
+
+Explicit verify-otp errors: missing otp_code -> 400; pending user not found -> 404; expired pending session -> 400 and deletion; invalid/expired code -> 400. Provider errors may become sanitized 500. Debug/staging can include diagnostic keys; production clients must not depend on debug-only detail/type/AWS fields.
+
+Push registration: POST/DELETE semantics are in register_push_token. It is a device registration fact, not authentication proof.
+
+## B. Vehicle registration and media
+
+Bike creation is standard DRF BikeViewSet at /api/v1/bikes/. Bike UUID is the resource key; masked_bike_id is display-only. Validate authenticated ownership for subsequent writes.
+
+### OCR
+
+POST /api/v1/ocr/vehicle-registration/ delegates to GeminiOCRService. Treat output as proposed fields, then ask user to confirm. Provider errors, malformed images and low confidence should preserve draft input rather than overwrite it. Verify exact response keys from the view, particularly nesting and confidence fields.
+
+### Multipart upload
+
+POST routes under /api/v1/upload/ are declared without trailing slash:
+
+- images
+- videos
+- audios
+- recognition-paper
+
+Upload views validate serializers, calculate object keys and call S3Service. Upload success semantics should be recorded separately per media endpoint. Per-bike index allocation must be concurrency-safe or duplicate-index behavior needs explicit handling.
+
+### Presign upload
+
+POST presigned-url and presigned-urls/batch returns short-lived upload credentials. Client then PUTs to object storage. Distinguish two checkpoints: URL issued with key/expiry; object upload succeeded and a media association was persisted/confirmed. Presigned URL should be excluded from logs and analytics. A 200 presign response must not set UI state to uploaded. On expiry, request a fresh URL for the intended object; reconcile before creating duplicate media rows.
+
+## C. Evaluation lifecycle
+
+### Form evaluation
+
+POST /api/v1/evaluation/bike/, exterior/, engine/, pricing/ and full/ are separate handlers in backend/apps/evaluation/views.py. They may have different required fields and persistence rules. Exterior/engine can be independently saved; full evaluation is an aggregate completion path. Use handler validators as contract and preserve partial answers for resume.
+
+### Async bike evaluation
+
+POST /api/v1/bikes/:bike_id/evaluate/async/ delegates to post_bike_evaluate_async. The client endpoint constant says HTTP 202 and a pending status; validate this against handler tests before freezing. GET /api/v1/bikes/:bike_id/evaluate/result/ returns current persisted result/pending state. No-media path has explicit no_media_error_body. Worker state is durable; app memory is not.
+
+Suggested client states: not_started; accepted/pending; running; completed; failed/no_media; unknown/reconcile. Do not invent progress percentage unless worker persists it. On app restart, fetch by bike ID.
+
+### Operator review
+
+POST /api/v1/operator-review-requests/ requires authenticated rider ownership. The view returns structured error_code/error_message for invalid ID, missing bike and ownership mismatch. It expires active requests after 15 minutes, returns an active request as HTTP 200 idempotent hit and creates a new request transactionally. Creation emits pg_notify after commit; realtime event is secondary to stored request. Client then opens WebSocket and waits for valuation_ready, but final data is fetched through REST.
+
+Cancellation POST /operator-review-requests/cancel/ should be documented from cancel_operator_review_request. Cancellable status set includes PENDING_REVIEW, IN_PROGRESS and COMPLETED; distinguish closing client session from reversing valuation.
+
+### Price selection and listing
+
+- GET result by query or UUID path reads operator review result.
+- GET operator-price resolves a price per bike/request.
+- POST price-selection/:bike_id/ persists seller option; frontend contract says client sends no price body because backend resolves the authoritative price.
+- POST listing/:bike_id/confirm/ creates or updates SellerListing.
+- GET listing/:bike_id/ reads seller state.
+- POST switch-to-instant-purchase/ changes path.
+- POST listing/:bike_id/cancel/ cancels listing.
+- Internal POST buyer-found callback validates HMAC before state update.
+
+For every command, record accepted source states and rejected transitions. Seller screen selection does not imply buyer found, pickup complete or money paid.
+
+## D. Marketplace read and buyer leads
+
+Marketplace list/detail is AllowAny with optional user identity. List, detail, media, condition-analysis, variants, related, share-link, contact-requests, buy-intents and filters have separate delegated functions. A shared response envelope is not proven.
+
+The listing projector joins Bike, BikeMedia, latest pickup, latest pricing/evaluation and sale records. Filtering eligibility can differ by fuel type and sale status. Expose only public fields. Contact request/buy intent are lead events and need abuse protection/idempotency.
+
+Frontend purchase-orders and payments route names are absent from the inspected mobile Django URL tree. This is a blocker for documenting purchase completion. Keep listing reads and buyer lead contracts separate until service ownership is proven.
+
+## E. Pickup and sale history
+
+GET sale-history returns computed seller cards from sale_history.py. Card fields synthesize registration progress, thumbnail, valuation expiry, operator review, listing, latest pickup, completion and rejection details. UI should consume explicit card UI state rather than recompute raw booleans.
+
+POST sale-history/:bike_id/cancel/ has business transition behavior and may stamp valuation expiry. Reload canonical response.
+
+Pickup routes create/list/detail/patch BikePickupSchedule. Access is checked against schedule owner and bike owner. Detail permits GET/PATCH. Contract should specify timezone and slot format; internal app renders Vietnam time. A schedule being requested is not proof pickup occurred.
+
+## F. Client errors and diagnostics
+
+apiClient.ts owns transport and token behavior. Error logging should include attempted endpoint/method/status but redact authorization, URL query token and personal data. Retry policy:
+
+- GET: bounded retry for network/upstream transient error;
+- mutation without idempotency key: no automatic retry on unknown timeout;
+- async evaluation: GET result by bike ID;
+- operator request: POST retry is safe only because backend returns active request idempotently;
+- upload: inspect object/media association before repeat;
+- buyer/payment: reconcile using stable request/order ID.
+
+## G. Contract completion checklist
+
+For each route, tie request serializer, response branch, auth class, DB rows, external providers, error status and tests. A path alone is not a full contract. The mobile route ledger records declarations; this appendix describes flow semantics and reconciliation.

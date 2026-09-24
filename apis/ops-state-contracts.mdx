@@ -1,0 +1,149 @@
+---
+title: "OPS State Transition Contracts"
+sidebarTitle: "OPS state contracts"
+description: "Feature-level API, state transition, source ownership, success/error behavior and reconciliation specification."
+---
+
+# OPS State Transition Contracts
+
+This appendix describes command/read boundaries for timoto-internal-app. It connects the API route to domain helper, persistence, callback and UI projection.
+
+## 1. Submission and operator pricing
+
+### Submission arrival
+
+- Inbound: POST /api/webhooks/tma/new-submission/.
+- Source: backend/bikes/api_urls.py and webhook handler.
+- Trust: HMAC/shared secret and event identity; validate before applying state.
+- Persistence: OPS mirrors mobile bike/assessment/pricing facts into operational entities. Read route is GET /api/submissions/.
+- Recovery: sender retries same event; receiver deduplicates. Queue should expose age/SLA and originating mobile ID.
+
+A webhook 2xx means the receiver accepted its responsibility. It does not mean an operator reviewed the submission.
+
+### AI report and operator choice
+
+GET /api/submissions/:bike_id/ai-report/ returns a read model if available. POST /ai-review-choice/ records a human choice related to AI suggestion. Choice is not the valuation itself; record actor, timestamp, source report/version and selected option.
+
+### Pricing input and submit
+
+Read pricing context at GET /submissions/:bike_id/pricing/. Submit at POST /submissions/:bike_id/submit/. Trace this command to:
+
+- request validation (operator price, rationale and selected inputs);
+- BikeEvaluationResult/PricingEntry write;
+- TIPP price snapshot;
+- SLA completion;
+- UserCompletionOutbox insert;
+- callback attempt and response.
+
+The tipp_pricing.py helper exposes current rate dictionary, snapshot application, instant price and listing price functions. Persisted pricing must retain the rate snapshot rather than recompute from today's rate. Round VND consistently.
+
+Rejected submission uses POST /reject/ and stores reason/actor. It should not also write an accepted price. Success route is GET projection, not a command.
+
+## 2. Outbox delivery protocol
+
+realtime_bridge.py is the transaction boundary between OPS decision and mobile notification:
+
+1. Persist price and outbox event in one DB transaction where possible.
+2. Claim one outbox row with lease.
+3. Construct stable event payload including bike/operator review IDs and price values.
+4. Call mobile S2S endpoint using HMAC.
+5. Mark delivered on successful acknowledgement.
+6. On exception/non-success, increment attempt metadata and retry boundedly.
+7. After exhaustion, retain a supportable failed row; do not delete the decision.
+
+Expected properties:
+
+- event_id stable across retries;
+- same event payload for same decision;
+- receiver de-duplicates event;
+- stale lease cannot mark success;
+- callback failure does not create another valuation;
+- operator UI distinguishes saved from delivered.
+
+## 3. Pickup state machine
+
+Routes:
+
+- GET /api/pickups/ list
+- GET /api/pickups/:bike_id/ detail
+- POST inspection/
+- POST picked-up/
+- POST complete/
+- POST reject/
+
+These are command endpoints except list/detail. Keep statuses and required fields in sync with handlers and BikePickupSchedule model.
+
+Meanings:
+
+- scheduled = appointment exists;
+- inspected = operator recorded condition;
+- picked-up = custody handoff recorded;
+- complete = pickup workflow terminal;
+- reject = pickup denied/cancelled with reason.
+
+A schedule row alone is not proof of custody. Require actor/time/location/media evidence where supported. Reject must preserve prior audit data. Rescheduling should expose prior and canonical new schedule.
+
+## 4. Sale state machine
+
+sale.py has completed-pickup lookup, sale-record lookup/status, completion confirmation parser, can_mark_sale_pending, can_mark_sale_failed, ensure_sale_record_picked_up, publish_gas_bike_to_marketplace, mark_sale_complete and mark_sale_failed.
+
+Vehicle routes:
+
+- POST /api/vehicles/:bike_id/sale/
+- POST /api/vehicles/:bike_id/sale/complete/
+- POST /api/vehicles/:bike_id/sale/fail/
+
+Guard checks use sale record and latest pickup schedule. A missing old sale row may be backfilled from completed pickup. Thus the API is also a data-reconciliation boundary; record whether a read can trigger backfill. Complete/fail require predecessor state according to helpers; fail needs reason. The sales API maps SaleTransitionError to an API response. Capture exact HTTP mapping from \_sale_error_response rather than assuming 400 vs 409.
+
+Eligible gas-bike publication into dealer catalog is controlled by feature setting and writes/updates dealer Combo plus bike linkage/assessment records. A cross-database update can fail after OPS sale commit; define retry/outbox and do not report atomic cross-service completion unless verified.
+
+## 5. Purchase and bank payout
+
+Purchase API uses bike_id as route identifier. Detail/list derives current UI step from BikeSaleRecord and BikePickupSchedule; not every displayed field necessarily lives in a Purchase model.
+
+Commands:
+
+- bank verification;
+- inspection pass;
+- deposit pay;
+- confirm pickup;
+- notary confirm;
+- remaining pay;
+- complete;
+- reject.
+
+Bank payout webhook at /api/webhooks/bank/payout/ must validate HMAC, transaction identifier, beneficiary/account match where applicable, amount, currency, event ID and replay window. Store provider transaction ID under uniqueness constraint. Reconcile out-of-order callbacks with current purchase state; don't pay again. An accepted callback that cannot match a local purchase should be quarantined and visible to an operator.
+
+## 6. Read models and status projections
+
+Dashboard, valuation queue, vehicles, pickups and purchases are distinct projections. domain.py computes exclusion lists, waiting pickup selection, local day ranges, display status and SLA seconds. It may select latest rows per bike; ordering and timezone are part of API contract.
+
+A list item needs enough data to identify primary ID, source bike ID, current state, timestamp, assigned staff, urgency/SLA, next permitted action and blocked reason. Use server-computed action eligibility; if clients derive buttons, test parity with server transition guards.
+
+## 7. Response and error map
+
+- input field missing/invalid: view-specific 400, usually safe validation message;
+- missing bike/purchase: 404;
+- missing/invalid staff auth: 401;
+- wrong role/object scope: 403;
+- SaleTransitionError: route-specific code/status/body;
+- callback invalid HMAC: 401 or 403 as implemented, no write;
+- duplicate callback: prior acknowledgement or explicit conflict;
+- cross-database/mobile timeout: command can be durable but outbox delivery pending;
+- unexpected exception: structured error/request ID in middleware, sanitized client response.
+
+Each command test should assert exact HTTP payload and DB side-effect count. Validate whether a 500 after DB commit leaves a recoverable idempotency/outbox key.
+
+## 8. OPS contract tests
+
+1. Invalid price creates neither evaluation nor outbox.
+2. Valid price stores rate snapshot, one result and one outbox row.
+3. Repeat submit returns same canonical result or conflict without another event.
+4. HMAC mismatch changes nothing.
+5. Mobile receiver timeout leaves outbox pending; retry emits same event ID.
+6. Stale outbox worker cannot mark delivered.
+7. Pickup complete and sale complete are distinct.
+8. Sale complete/fail from invalid state does not write.
+9. Catalog publication occurs only for eligible bike and is recoverable on cross-DB failure.
+10. Bank callback amount mismatch and replay do not pay twice.
+11. Staff IDs, seller data and account details are redacted in logs.

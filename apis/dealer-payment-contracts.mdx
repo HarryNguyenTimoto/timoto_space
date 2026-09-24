@@ -1,0 +1,140 @@
+---
+title: "Dealer Checkout and Callback Contracts"
+sidebarTitle: "Payment contracts"
+description: "Feature-level API, state transition, source ownership, success/error behavior and reconciliation specification."
+---
+
+# Dealer Checkout and Callback Contracts
+
+## 1. Payment vocabulary
+
+Keep these IDs and states distinct:
+
+- auction_id: auction/vehicle competitive allocation;
+- dealer_order_id: buyer's dealer transaction;
+- checkout_id: local payment attempt;
+- provider transaction ID: bank/payment rail identity;
+- QR reference: instruction/payload reference;
+- invoice/confirmation ID: receipt document resource.
+
+A checkout can exist while unpaid. QR can exist while callback is pending. A provider return URL can report success before the server has verified an IPN. Only durable local settlement drives order paid state.
+
+## 2. Route families and source
+
+Mounts are in backend/timoto/urls.py; details in backend/payments/urls.py:
+
+- POST deposit/create, full-payment/create, dealer_order/create;
+- checkout collection/detail/QR views in checkout_views.py;
+- VNPay return and IPN;
+- VietQR callback and token_generate;
+- deposit/full-payment confirmation pages and PDF;
+- order payment status and delivery info;
+- official callback aliases /api/token_generate and /bank/api/transaction-sync;
+- legacy /api/payments/ mount.
+
+Resolve exact HTTP verbs from decorators and tests. Duplicate aliases may share a handler while differing in slash behavior and prefix.
+
+## 3. Checkout creation contract
+
+For deposit/full payment, request identifies intended order/auction, dealer and amount context. Server recalculates amount from local persisted state. Never trust browser amount without comparison. Within transaction:
+
+1. authorize dealer owns order/auction;
+2. verify eligible state and amount due;
+3. create or reuse pending Checkout;
+4. request provider intent/reference;
+5. persist provider reference and expiry;
+6. return local checkout_id plus payment instructions/reference.
+
+If provider creation fails after local row creation, mark attempt failed/reconcilable. If network timeout makes provider result ambiguous, query provider using idempotency/reference before retry. A second POST should not create duplicate deposit/full-payment obligations.
+
+The clean response should make pending semantics explicit: checkout_id, order/auction reference, amount/currency, status=pending, provider, expiry and QR/redirect instructions as applicable. Fill the exact schema from checkout_views serializers and payment view response branches.
+
+## 4. QR request and browser return
+
+GET checkout/:checkout_id/qr/ returns payment instruction only. It must be private to owning dealer and linked to current active checkout. Validate expiry and reuse semantics. Display must say awaiting payment until callback confirms.
+
+VNPay return is browser navigation. It may read query parameters or redirect user back to frontend. It should not mark local payment paid based solely on query if independent IPN is authoritative. If return arrives before IPN, respond pending/processing or expose refresh path. Prevent query values or signature from appearing in analytics/referrer logs.
+
+## 5. Provider callback and settlement
+
+### Validation order
+
+1. Parse bounded request body/query.
+2. Validate provider signature or token.
+3. Validate provider/account/merchant identity.
+4. Find local checkout by stable merchant reference.
+5. Compare amount and currency with local checkout.
+6. Validate expected payment type (deposit vs full).
+7. Lock local checkout/order row and inspect current state.
+8. If already settled by same provider transaction ID, return prior acknowledgement.
+9. If settled by a different transaction, flag reconciliation; never overwrite.
+10. Persist provider transaction ID, paid timestamp and local paid status atomically.
+11. Return provider-specific acknowledgement promptly.
+
+Invalid signature, wrong amount/currency, unknown checkout and duplicate/replayed callback require separate error/ack classes. Never return successful acknowledgement if event did not durably apply, unless provider retry handling explicitly requires acceptance plus later reconciliation.
+
+## 6. VietQR endpoints
+
+Official routes:
+
+- POST /api/token_generate and slash alias: provider token generation.
+- POST /bank/api/transaction-sync and slash alias: transaction notification.
+- Versioned aliases may also be mounted through payments URLs.
+
+Token endpoint manages provider authentication material; never expose generated token in app logs. Callback body shape and signature rules must follow current implementation in payments/views.py; don't copy Postman example as canonical until checked against handler/provider docs. Maintain idempotency by provider transaction ID and local checkout reference.
+
+## 7. VNPay endpoints
+
+- GET /api/payments/vnpay/return/: browser-facing route.
+- POST /api/payments/vnpay/ipn/: provider notification route (confirm method from view).
+- Return URL communicates navigation result.
+- IPN validates provider hash/signature and local order/amount and applies settlement.
+
+Test success, cancellation, tampered params, wrong amount, duplicate IPN, IPN-before-return, return-before-IPN, unknown order and provider retry. Avoid logging full signed query string.
+
+## 8. Confirmation and delivery
+
+Confirmation routes are read-only page/PDF endpoints keyed by auction_id. PDF must enforce ownership/authorization and return application/pdf with safe filename. Confirmation should be available only when relevant local payment is settled. Delivery status is a fulfilment read model and should not advance delivery by GET.
+
+Dealer order action flags can_pay, can_cancel, can_receive, can_get_invoice and can_reorder are hints calculated at response time. Command handlers must recheck state and role because UI data can be stale.
+
+## 9. Clean and error response taxonomy
+
+Do not use one wrapper unless code implements it. Expected families:
+
+- create checkout: JSON resource/reference;
+- fetch checkout/order: JSON canonical state;
+- QR: JSON instruction fields;
+- callback: provider-specific acknowledgement;
+- return: redirect or HTML/browser response;
+- PDF: binary application/pdf;
+- malformed fields: 400;
+- unauthenticated: 401;
+- wrong dealer: 403;
+- unknown checkout/order: 404;
+- incompatible payment state/duplicate conflict: implementation-specific 400/409;
+- provider unavailable/timeout: 5xx or pending, with no false paid state.
+
+Record exact status and body from each view before publishing SDK examples.
+
+## 10. Security and reconciliation
+
+Never expose bank account tokens, signatures, provider access token, callback raw body, card/private data or secrets. Log stable local order/checkout ID, provider event ID, amount comparison result, signature-valid boolean, status and request correlation only.
+
+Daily reconciliation joins provider settlements with local Checkout/Payment and dealer order rows. Detect provider-paid/local-pending, local-paid/provider-unsettled, duplicate provider transaction, wrong amount/currency, stale checkout, receipt generated before paid and delivery before full settlement. Operator resolves mismatches; background jobs must not silently rewrite historic amounts.
+
+## 11. Contract test matrix
+
+- wrong dealer cannot create/read checkout, download PDF or inspect another order;
+- amount comes from server order state;
+- checkout create is idempotent on retry;
+- provider timeout leaves recoverable local state;
+- QR is pending, never paid;
+- signature/amount mismatch causes no state change;
+- valid callback settles once under concurrent duplicate delivery;
+- browser return cannot settle payment;
+- unknown callback reference is visible for reconciliation;
+- callback acknowledgement exactly matches provider requirement;
+- delivery status remains read-only;
+- full-payment cannot occur before deposit/auction eligibility;
+- PDFs contain correct content type and no private fields for another dealer.

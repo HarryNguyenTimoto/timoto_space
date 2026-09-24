@@ -178,7 +178,10 @@
           "apis/dealer-route-ledger",
           "apis/mobile-route-ledger",
           "apis/internal-route-ledger",
-          "apis/response-contracts-evidence"
+          "apis/response-contracts-evidence",
+          "apis/ops-state-contracts",
+          "apis/mobile-feature-contracts",
+          "apis/dealer-payment-contracts"
         ]
       },
       {
