@@ -38,6 +38,7 @@
       {
         "group": "Architecture & Systems",
         "pages": [
+          "architecture/seven-project-spec",
           "systems/six-repos-map",
           "architecture/timoto-ai-repair-foundation",
           "systems/screen-api-registry",
